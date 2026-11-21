@@ -3,16 +3,16 @@ import { resolve } from 'node:path';
 import { build } from 'esbuild';
 
 test('native room semantics survive physical updates without acoustic membership or focus changes', async ({ context }) => {
-  const compiled = await build({ bundle: true, write: false, format: 'esm', platform: 'browser',
+  // The Room tab imports stylesheets, so the bundle needs an output folder to name them in; nothing is written.
+  const compiled = await build({ bundle: true, write: false, format: 'esm', platform: 'browser', outdir: 'room-semantics-bundle',
     stdin: { resolveDir: resolve('.'), loader: 'tsx', contents: `
       import { createElement } from 'react';
       import { createRoot } from 'react-dom/client';
-      import RoomLayoutView from './src/components/RoomLayoutView';
+      import RoomInfoDisplay from './src/components/RoomInfoDisplay';
       import { GMCPRoom } from './src/gmcp/Room';
       import { GMCPClientSpatial } from './src/gmcp/Client/Spatial';
-      import { useRoomStore } from './src/stores/roomStore';
       import { livingRoomLayout } from './src/map/roomLayout.fixture';
-      const client = { gmcp: { send() {}, handlers: {} }, media: { sceneChanged() {} } };
+      const client = { gmcp: { send() {}, handlers: {} }, media: { sceneChanged() {} }, sendCommand() {} };
       const room = new GMCPRoom(client);
       const spatial = new GMCPClientSpatial(client);
       const layout = livingRoomLayout();
@@ -22,20 +22,17 @@ test('native room semantics survive physical updates without acoustic membership
       const seat = layout.things.find(t => t.id === '#2');
       seat.relation = { kind: 'on', target: '#1', text: 'on coffee table' };
       seat.state = { opened: false, mode: 'offline' };
-      function View() {
-        const current = useRoomStore(s => s.roomLayout);
-        return current && createElement(RoomLayoutView, { layout: current, roomName: 'Semantic room', onExit() {} });
-      }
       room.receive('Layout', layout);
-      createRoot(document.getElementById('root')).render(createElement(View));
+      createRoot(document.getElementById('root')).render(createElement(RoomInfoDisplay, { client }));
       globalThis.fixture = { room, spatial, seat, layout };
     ` } });
   await context.route('**/room-semantics', route => route.fulfill({ contentType: 'text/html',
     body: '<!doctype html><button id="focus">Keep focus</button><div id="root"></div><script type="module" src="/room-semantics.js"></script>' }));
-  await context.route('**/room-semantics.js', route => route.fulfill({ contentType: 'text/javascript', body: compiled.outputFiles[0].text }));
+  const script = compiled.outputFiles.find(file => file.path.endsWith('.js'));
+  await context.route('**/room-semantics.js', route => route.fulfill({ contentType: 'text/javascript', body: script!.text }));
   const page = await context.newPage();
   await page.goto(`${process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173'}/room-semantics`);
-  const things = page.getByRole('list', { name: 'Things in the layout' });
+  const things = page.getByRole('listbox', { name: 'Things' });
   await expect(things).toContainText('on coffee table, faces south, closed, offline');
   await expect(page.getByText('oak', { exact: true })).toBeVisible();
   await page.locator('#focus').focus();

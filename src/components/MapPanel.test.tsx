@@ -6,7 +6,9 @@ vi.mock("@react-aria/live-announcer", () => ({ announce }));
 
 import type MudClient from "../client";
 import { emptyMap, recordRoom } from "../map/mapGraph";
+import { sampleLayout } from "../map/roomLayout.fixture";
 import { useMapStore } from "../stores/mapStore";
+import { useRoomStore } from "../stores/roomStore";
 import MapPanel from "./MapPanel";
 
 function knownMap() {
@@ -59,6 +61,16 @@ describe("MapPanel", () => {
       "Map of Town: 2 known rooms on this level. You are in Square.");
     expect(picture.querySelectorAll("rect")).toHaveLength(2);
     expect(picture.querySelector(".map-room-current title")?.textContent).toBe("Square (exits: north, east)");
+  });
+
+  it("holds only Here, Go to and the area picture, even in a spatial room: the room's inside is the Room tab's", () => {
+    useRoomStore.getState().reset();
+    useRoomStore.getState().setRoomLayout({ ...sampleLayout(), num: 1 });
+    renderPanel();
+    expect(screen.getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["Map", "Here", "Go to", "Picture"]);
+    expect(screen.getAllByRole("img")).toHaveLength(1);
+    expect(screen.queryByRole("radio")).toBeNull();
+    useRoomStore.getState().reset();
   });
 
   it("asks you to walk when no room is known yet", () => {

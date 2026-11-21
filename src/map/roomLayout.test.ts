@@ -9,12 +9,14 @@ import {
   bodyFootprint,
   labelOrder,
   mainMaterial,
-  namedWithKind,
   nearestWall,
+  personLabel,
   thingForm,
+  thingKind,
+  describeDoorway,
   describeExit,
   describePlace,
-  describeThing,
+  describeWhere,
   displayName,
   exitWall,
   layoutPersonNamed,
@@ -55,6 +57,13 @@ describe("room layout geometry", () => {
     expect(displayName({ id: "#99", name: "[bold]Q" }, "#99")).toBe("Q (you)");
     expect(describeExit({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
       "west: 0.9 m doorway in the west wall, midway between the north and south walls",
+    );
+    // The same without the name, for beside the exit's own button.
+    expect(describeDoorway({ name: "[cyan]west[normal]", to: 1, at: [-2.7, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
+      "0.9 m doorway in the west wall, midway between the north and south walls",
+    );
+    expect(describeDoorway({ name: "hatch", to: 1, at: [0, 0, 0], width: 0.9 }, [6, 8, 3])).toBe(
+      "not in a wall, midway between the north and south walls, midway between the east and west walls",
     );
   });
 
@@ -108,7 +117,9 @@ describe("room layout geometry", () => {
       "south: 0.9 m doorway in the south wall, midway between the east and west walls",
     );
     const pump = placed.find((p) => p.thing.id === "#10211") as (typeof placed)[number];
-    expect(describeThing(pump, layout.size, "")).toBe("wall-mounted heat pump, against the south wall, against the west wall");
+    expect(describeWhere(pump.thing, pump.bounds, layout.size)).toBe("against the south wall, against the west wall");
+    const puddle = layout.things.find((thing) => thing.shapes.length === 0) as LayoutThing;
+    expect(describeWhere(puddle, undefined, layout.size)).toBe("no size or place given");
   });
 
   it("says where things are in plain words", () => {
@@ -120,9 +131,9 @@ describe("room layout geometry", () => {
       "against the south wall, midway between the east and west walls",
     );
     const [table, q] = placeThings(sampleLayout());
-    expect(describeThing(q, sampleLayout().size, "#99")).toBe("Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall");
-    expect(describeThing(table, sampleLayout().size, "#99")).toBe(
-      "oak table, 1.6 m from the north wall, midway between the east and west walls",
+    expect(describeWhere(q.thing, q.bounds, sampleLayout().size)).toBe("0.6 m from the south wall, 0.5 m from the east wall");
+    expect(describeWhere(table.thing, table.bounds, sampleLayout().size)).toBe(
+      "1.6 m from the north wall, midway between the east and west walls",
     );
     expect(describeExit(sampleLayout().exits[0], sampleLayout().size)).toBe(
       "west: 0.9 m doorway in the west wall, 1.3 m from the south wall",
@@ -305,34 +316,44 @@ describe("what things are", () => {
     expect(thingForm({ ...byId("#8"), classes: undefined })).toBe("box");
   });
 
-  it("finds the main material and names a thing with its class and material", () => {
+  it("finds the main material and says what a thing is by its class and material", () => {
     expect(mainMaterial(byId("#2"))).toBe("cotton");
     expect(mainMaterial(byId("#8"))).toBeUndefined();
-    expect(namedWithKind(byId("#1"), "#99")).toBe("coffee table (table, wood)");
-    expect(namedWithKind(byId("#8"), "#99")).toBe("robot vacuum (thing)");
-    expect(namedWithKind({ ...byId("#8"), classes: undefined }, "#99")).toBe("robot vacuum");
+    expect(thingKind(byId("#1"))).toBe("table, wood");
+    expect(thingKind(byId("#8"))).toBe("thing");
+    expect(thingKind({ ...byId("#8"), classes: undefined })).toBe("");
     const placed = placeThings(living);
     const table = placed.find((p) => p.thing.id === "#1");
-    expect(table && describeThing(table, living.size, "#99")).toBe(
-      "coffee table (table, wood), midway between the north and south walls, midway between the east and west walls",
+    expect(table && describeWhere(table.thing, table.bounds, living.size)).toBe(
+      "midway between the north and south walls, midway between the east and west walls",
     );
   });
 
-  it("names things in the live sample with their nearest class and main material, people plainly", () => {
+  it("says where a thing is by the server's support words when sent, in place of the wall words", () => {
+    const table = placeThings(living).find((p) => p.thing.id === "#1") as ReturnType<typeof placeThings>[number];
+    const radio: LayoutThing = { ...table.thing, id: "#77", name: "portable radio",
+      relation: { kind: "on", target: "#1", text: "on the low table" }, state: { mode: "playing" } };
+    expect(describeWhere(radio, table.bounds, living.size)).toBe("on the low table, playing");
+    expect(describeWhere({ ...radio, shapes: [] }, undefined, living.size)).toBe("on the low table, playing");
+    expect(describeWhere({ ...table.thing, mounted: true }, { ...table.bounds, z0: 1.2 }, living.size)).toBe(
+      "midway between the north and south walls, midway between the east and west walls, mounted 1.2 m up",
+    );
+    expect(describeWhere({ ...table.thing, fixed: true }, table.bounds, living.size)).toMatch(/, fixed in place$/);
+  });
+
+  it("says what things in the live sample are by their nearest class and main material", () => {
     const live = livingSample as RoomLayout;
-    const named = (id: string) => namedWithKind(live.things.find((t) => t.id === id) as RoomLayout["things"][number], "#2");
-    expect(named("#29617")).toBe("coffee table (table, pine)");
-    expect(named("#25860")).toBe("A flat screen television named Moonbase (tv, lcd)");
-    expect(named("#28049")).toBe("There Will Come Soft Rains (audio_play)");
-    expect(named("#2")).toBe("Player 6 (you)");
-    expect(named("#6574")).toBe("Person 1");
+    const kind = (id: string) => thingKind(live.things.find((t) => t.id === id) as RoomLayout["things"][number]);
+    expect(kind("#29617")).toBe("table, pine");
+    expect(kind("#25860")).toBe("tv, lcd");
+    expect(kind("#28049")).toBe("audio_play");
   });
 
   it("reads material components with extra keys, and an empty material as none", () => {
     const thing = (id: string) => livingSample.things.find((t) => t.id === id) as RoomLayout["things"][number];
     expect(mainMaterial(thing("#3963"))).toBe("plastic"); // entries carry phase, frozen_fraction, vapor_fraction too
     expect(mainMaterial(thing("#28049"))).toBeUndefined(); // sent as []
-    expect(namedWithKind(thing("#28049"), "#2")).toBe("There Will Come Soft Rains (audio_play)");
+    expect(thingKind(thing("#28049"))).toBe("audio_play");
   });
 
   it("finds the wall a thing is nearest", () => {
@@ -353,12 +374,12 @@ describe("what things are", () => {
 });
 
 describe("people's labels and names", () => {
-  it("lists a person with the server's label, and a person without one by name alone", () => {
+  it("reads a person's label as the server sent it, without colour markup, and none when there is none", () => {
     const layout = livingRoomLayout();
     const person = layout.things.find((t) => t.id === "#9") as RoomLayout["things"][number];
-    expect(namedWithKind(person, "#99")).toBe("Person 1");
-    expect(namedWithKind({ ...person, appearance: { label: "the [red]tall woman" } }, "#99")).toBe("Person 1 (the tall woman)");
-    expect(namedWithKind({ ...person, appearance: { label: 7 } as never }, "#99")).toBe("Person 1");
+    expect(personLabel(person)).toBeUndefined();
+    expect(personLabel({ ...person, appearance: { label: "the [red]tall woman" } })).toBe("the tall woman");
+    expect(personLabel({ ...person, appearance: { label: 7 } as never })).toBeUndefined();
   });
 
   it("finds the layout person for a Room.Players entry by name or full name, never an object", () => {

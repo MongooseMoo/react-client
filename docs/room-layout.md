@@ -1,8 +1,8 @@
 # GMCP Message: `Room.Layout`
 
 In a spatial room the server tells the client what the room looks like inside: how big it is,
-where its doorways are, and where each thing and person stands. The client draws it to scale in
-the Map tab, north up, and says the same in words beside the picture.
+where its doorways are, and where each thing and person stands. The client draws it to scale at
+the top of the Room tab, north up, and says the same in words in the lists under the picture.
 
 ## From the server
 
@@ -157,7 +157,7 @@ for the 3D figure, the portrait and the plan token alike:
 `garments`
 are drawn on humanoid plans when sent; `traits` add their parts to humanoid plans; `posture` applies to humanoid
 plans (animals always stand). The portrait shows `marks` on humanoid plans' heads. Accessible names and titles still
-come from `label` ("a werewolf"), shown as sent in the People list ("Name (label)") and on the player card; the
+come from `label` ("a werewolf"), shown as sent in the Room tab's People list ("Name (label)") and on the player card; the
 client adds no words of its own for a body plan, so a new label from the game shows as it arrives.
 
 ## Keeping it current
@@ -178,11 +178,70 @@ assignments do not promise automatic publication.
 
 ## In the client
 
+### The Room tab: one picture, one list of things, one list of people, one selection
+
+The Room tab holds, from the top: the room's name and area; in a spatial room the picture
+("Room layout", below) with its size and finishes; then **Exits**, **Things** and **People**. A
+room that is not spatial has no picture and the same three lists. The Map tab holds only the area
+map: Here, Go to and its picture.
+
+**Exits** is one list. Each `Room.Info` exit is a button that sends it, followed in a spatial
+room by where its doorway is ("west", then "0.9 m doorway in the west wall, 1.3 m from the south
+wall"); the doorway is the `Room.Layout` exit whose `name` is the same key. An exit the layout
+gives no doorway for is its button alone, as every exit is in a room with no layout. A doorway
+the layout draws that `Room.Info` lists no exit for comes last, in words with its name and no
+button ("hatch: not in a wall, …").
+
+Each thing and each person is listed once. The lists are joined by id from three messages:
+`Char.Items` (the room's items, with their `verbs` and `earcon`), `Room.Layout` (`things`, the
+same ids) and `Room.Players` (names only).
+
+- **Things** keeps the order of the room's item list, followed by things only the layout holds
+  (a biscuit on a plate). A row is the thing's name and where it is: "portable radio, on the low
+  table". Where is the server's `relation.text` when it sends one; otherwise the place by the
+  walls ("1.2 m from the north wall, near the west wall"), or "no size or place given" for a
+  thing sent without shapes. After that come "mounted 1.2 m up" or "fixed in place", and the
+  native details (`faces north`, `open`/`closed`, `lit`/`unlit`, the electronics `mode`). An item
+  the layout does not hold is listed by its name alone. Each thing on a surface has its own row.
+- **People** are those the layout calls `player` or `person`, you included ("Ondine (you)"),
+  plus any `Room.Players` entry the layout does not hold, in name order. A row is a small
+  head-and-shoulders portrait drawn from `appearance` (decoration, hidden from screen readers),
+  the name, and the server's `label` in brackets: "Ann (the red-haired woman)". In a room with no
+  layout, a player is told from a thing by matching the item's name to a `Room.Players` full
+  name, as before.
+
+There is **one selection**, kept in the items store (`selected`: the id, with the thing's layout
+`lifetime` when it has one). The selected row in either list, the outlined thing in the picture,
+the selected row in the Inventory tab and the thing interact mode is on (`docs/keystrokes.md`)
+are all that one value. It is set by arrowing to or clicking a row, by clicking a thing or person
+in the picture, or by interact mode's Tab. Selecting never sends a command. The selection clears
+when its thing leaves the list, the layout or the room, when the layout sends the same id with
+another `lifetime`, and when `Room.Info` names another room (something you carry stays selected).
+
+Under each list is the selected row's card:
+
+- A thing's card: its name, where it is, what it is and is made of when the layout says
+  (`classes` and `material`: "table, wood"), and one button for each verb the server listed in
+  `Char.Items` and no others. A thing only the layout holds has no buttons. Under the card are
+  the thing's parts and drawers (next two sections).
+- A player's card: portrait, name, the server's `label`, where they are, and Page, Say To, Look
+  and Follow. The commands use the player's `Room.Players` name, found by matching it to the
+  layout's name for them, because `Room.Players` carries no id.
+- Anyone else's card (a person who is not a player, or you): name, where they are, and the verbs
+  the server listed for them.
+
+Rows and cards follow `Room.Layout` and `Room.LayoutUpdate` quietly: nothing is announced and
+focus never moves. When the selected thing leaves while focus is in its card, focus returns to
+its list, which then selects the row now in that place; when focus is on the list itself, the
+list selects that row at once. With focus anywhere else the selection just clears. The Inventory
+tab's list does the same.
+
 ### Inspecting a construction
 
-Find an object under **Things** in the Map tab. Each visible construction part
+Select an object under **Things** in the Room tab. Under its card, each visible construction part
 has an **Inspect** button unless it has a drawer control. Press Enter to read
-the MOO's description. Dollhouse and Your eyes also let you click the part.
+the MOO's description. Dollhouse and Your eyes also let you click the part: that selects the
+object and presses the same button.
 On the trestle writing desk in the Balmoral Towers office, inspecting the slab
 sends the same command as typing `look writing-slab on trestle writing desk`.
 When two parts on one host share a label, their buttons include their role paths.
@@ -196,10 +255,10 @@ different construction in `@autoform`. Anyone watching receives the new parts.
 
 ### Using a fitted drawer
 
-In the Map tab, open **Room layout** and find the desk under **Things**. Focus
+In the Room tab, select the desk under **Things**. Under its card, focus
 **Open upper-left drawer** and press Enter. Visible contents appear immediately
 after the drawer button. **Get** takes the named object. In Dollhouse and Your
-eyes, clicking the visible drawer face activates the same button. A person
+eyes, clicking the visible drawer face selects the desk and activates the same button. A person
 using ordinary text commands can open, close or empty the drawer while you watch.
 
 A box bound to a drawer also carries
@@ -210,8 +269,23 @@ disables the corresponding control.
 
 ### Room views
 
-The Map tab shows the room under "Room layout", in one of three views chosen with the View radio
-buttons (the choice is kept across rooms):
+The Room tab shows the room under "Room layout", in one of three views chosen with the View radio
+buttons (the choice is kept across rooms). The room is drawn once; three.js is loaded only when
+Dollhouse or Your eyes is the chosen view and the Room tab is showing. While another sidebar tab
+shows, or the sidebar is collapsed or hidden, a 3D view is not kept: nothing is loaded, built or
+drawn. Coming back to the Room tab draws it again in the same view with the same selection; the
+Dollhouse starts again from its whole-room view. The Plan stays as it was, zoom included.
+
+In every view, clicking or tapping a thing or a person selects it (the one selection, above); a
+click that dragged the view more than 4 CSS pixels selects nothing, and moving the pointer over
+the picture selects nothing. The selected thing or person is marked by shape as well as colour:
+in the Plan a dashed frame round its footprint (a dashed ring round a person's token) with its
+label bold and underlined; in Dollhouse and Your eyes the edges of its box as dashed lines with a
+small block at each corner, drawn over whatever stands in front, and its label bold, underlined
+and boxed. The mark follows the thing when it moves and stays through a change of view. You, in
+Your eyes, are not drawn and so not outlined. A saved SVG carries no selection mark.
+
+The three views:
 
 - **Plan**: the drawing from above, described below.
 - **Dollhouse**: the room in 3D, seen from above one corner, far enough out for the whole room
@@ -262,7 +336,7 @@ moves up, or a little sideways, by the least that frees it, its bottom never mor
 own heights above that top. Sideways, a thing's label goes only while its text still spans the
 middle of the thing; a person's label only while its own middle stays over that person's head as
 drawn, so it never sits over the space beside them and reads as a neighbour's. One with no such
-place is left out until zooming makes room (the lists below still name it). Labels are
+place is left out until zooming makes room (the Room tab's lists still name it). Labels are
 placed by their size as drawn, and two side by side keep a few pixels apart.
 
 In every view things are drawn by what they are, from the first of their `classes` the client
@@ -356,7 +430,8 @@ the face's sides and in over the neck, so the bands also differ in the People li
 only the head inside a circle. A
 person without `appearance` is the same figure in the person colour, you in blue. The plan marks tables' legs, seats' backs and doors' swing. The 3D views are
 one image to a screen reader with the same name as the plan, and clicking a doorway in them
-sends its exit too.
+sends its exit too. A click in a 3D view lands on the nearest thing drawn under it: a thing
+standing in front of a doorway is selected, and the doorway behind it is not taken.
 
 - The drawing: walls; doorways as gaps in the walls with their exit names outside; each thing's
   footprint from above (boxes as rectangles, spheres as circles); people as round tokens, in
@@ -365,14 +440,11 @@ sends its exit too.
   north arrow. Labels move aside so they do not cover each other.
 - Zoom with the wheel, a pinch, the Zoom in / Zoom out buttons, or `+` and `-` on the picture;
   drag or use the arrow keys to pan; `0` or Whole room shows the whole room.
-- Clicking a doorway sends its exit name, as the exit buttons above it do.
+- Clicking a doorway sends its exit name, as the exit buttons under the picture do.
 - Save as SVG downloads the whole room as a standalone SVG file in the current colours.
 - To a screen reader the drawing is one image whose name gives the room's size and how many
-  exits, people and things it holds. Below it, headed lists give the size, each exit
-  ("west: 0.9 m doorway in the west wall, 1.3 m from the south wall") and each person and thing
-  ("oak table, 1.2 m from the north wall, near the west wall"; with `classes` and `material`,
-  "coffee table (table, wood), …"; a person with a `label`, "Ann (the red-haired woman), …").
-  Each person in the list, and the selected player's card in the Room tab (matched by name), shows
-  a small head-and-shoulders portrait drawn from `appearance`; it is decoration, hidden from
-  screen readers, and the label beside it is ordinary text. Moves update the lists quietly;
+  exits, people and things it holds. Below it come the size and the finishes. The exits, things
+  and people are the Room tab's lists (above), where each thing and person can be selected from
+  the keyboard; the picture
+  itself is selected in only with a pointer. Moves update the picture and the lists quietly;
   nothing is announced and focus never moves.

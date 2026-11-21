@@ -6,16 +6,15 @@ import { compareDirections, directionLabel } from "../map/directions";
 import type { MapRoom } from "../map/mapGraph";
 import { cancelWalk, startWalk } from "../map/walker";
 import { useMapStore } from "../stores/mapStore";
-import { useRoomStore } from "../stores/roomStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import MapPicture from "./MapPicture";
-import RoomLayoutView from "./RoomLayoutView";
 import "./MapPanel.css";
 
 /**
  * The Map tab. Text first: where you are and where each exit leads, then Go
  * to, which walks to any room you have visited, then the drawn map. Only
- * rooms this character has been in are known.
+ * rooms this character has been in are known. The inside of the room you are
+ * in is the Room tab's.
  */
 interface MapPanelProps {
   client: MudClient;
@@ -27,7 +26,6 @@ const MapPanel: React.FC<MapPanelProps> = ({ client }) => {
   const map = useMapStore((state) => state.map);
   const currentRoomId = useMapStore((state) => state.currentRoomId);
   const walk = useMapStore((state) => state.walk);
-  const layout = useRoomStore((state) => state.roomLayout);
   const [targetId, setTargetId] = useState("");
   const [status, setStatus] = useState("");
 
@@ -139,10 +137,6 @@ const MapPanel: React.FC<MapPanelProps> = ({ client }) => {
           status && <p>{status}</p>
         )}
       </section>
-
-      {layout && layout.num === current.id && (
-        <RoomLayoutView layout={layout} roomName={current.name} onCommand={(command) => client.sendCommand(command)} />
-      )}
 
       <section aria-labelledby="map-picture-heading">
         <h5 id="map-picture-heading">Picture</h5>

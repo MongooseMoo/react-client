@@ -28,7 +28,8 @@ import {
  * walls, doorways with their exit names, each thing's footprint from above,
  * people distinct and you marked. Zoom and pan move the viewBox, so lines and
  * text stay crisp. It is one image to a screen reader (its label sums it up);
- * RoomLayoutView's lists say the same in words.
+ * the Room tab's lists say the same in words, and hold the same selection this
+ * drawing frames.
  *
  * The drawing carries its own stylesheet, built on the client's colour
  * tokens with their values as fallbacks, so the saved file looks the same
@@ -47,6 +48,10 @@ interface RoomLayoutPictureProps {
   placed: PlacedThing[];
   youId: string;
   label: string;
+  /** The one selected thing or person (the items store's), framed in the drawing; null for none. */
+  selectedId: string | null;
+  /** A thing or person was clicked (not dragged across). */
+  onSelect: (id: string) => void;
   onExit: (name: string) => void;
   /** Called with the drawing when the player asks to save it. */
   onSave: (svg: SVGSVGElement) => void;
@@ -88,6 +93,9 @@ export const LAYOUT_STYLE = `
 .room-layout-svg .rl-label { fill: var(--color-text-secondary, #a0a0b0); paint-order: stroke; stroke: var(--color-bg-elevated, #1a1a22); stroke-width: 3.5px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-label-person { fill: var(--color-text, #e8e8ed); font-weight: 600; }
 .room-layout-svg .rl-label-you { fill: var(--color-primary, #5ba0ff); font-weight: 700; }
+.room-layout-svg .rl-item { cursor: pointer; }
+.room-layout-svg .rl-selection { fill: none; stroke: var(--color-text, #e8e8ed); stroke-width: 3px; stroke-dasharray: 7 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.room-layout-svg .rl-label-selected { font-weight: 700; text-decoration: underline; }
 .room-layout-svg .rl-symbol { fill: var(--color-text-muted, #9999aa); fill-opacity: 0.8; }
 .room-layout-svg .rl-symbol-line { fill: none; stroke: var(--color-text-muted, #9999aa); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 .room-layout-svg .rl-mark { fill: var(--color-text-muted, #9999aa); }
@@ -98,6 +106,7 @@ export const LAYOUT_STYLE = `
   .room-layout-svg .rl-symbol { fill: CanvasText; }
   .room-layout-svg .rl-mounted .rl-thing, .room-layout-svg .rl-person .rl-thing { fill: CanvasText; }
   .room-layout-svg .rl-door, .room-layout-svg .rl-hatch, .room-layout-svg .rl-you-ring { stroke: Highlight; }
+  .room-layout-svg .rl-selection { stroke: CanvasText; }
   .room-layout-svg .rl-you .rl-thing { fill: Highlight; }
   .room-layout-svg .rl-person.rl-dressed .rl-thing { fill: CanvasText; }
   .room-layout-svg .rl-you.rl-dressed .rl-thing { fill: Highlight; }
@@ -246,7 +255,7 @@ function flatFormSymbol(p: PlacedThing, size: [number, number, number]): React.R
   }
 }
 
-const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, youId, label, onExit, onSave }) => {
+const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, youId, label, selectedId, onSelect, onExit, onSave }) => {
   const base = useMemo(() => baseViewBox(layout), [layout]);
   const [view, setView] = useState<ViewBox>(base);
   const [viewFor, setViewFor] = useState(layout.num);
@@ -256,6 +265,10 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
   /** A doorway click sends its exit, unless the pointer was dragging the view. */
   const exitClick = (name: string) => () => {
     if (!dragStart.current?.dragged) onExit(name);
+  };
+  /** A click on a thing or person selects it, unless the pointer was dragging the view. Hovering does nothing. */
+  const selectClick = (id: string) => () => {
+    if (!dragStart.current?.dragged) onSelect(id);
   };
 
   // A new room starts at the whole-room view; a refreshed layout of the same room keeps the zoom.
@@ -435,6 +448,26 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
     );
   });
 
+  // The selected thing or person: a dashed frame round it, drawn over everything in the room so
+  // nothing hides it. The dashes and the frame's shape mark it without relying on colour.
+  const chosen = placed.find((p) => p.thing.id === selectedId);
+  const frameGap = fontSize * 0.35;
+  const selectionFrame = chosen && (() => {
+    const [cx, cy] = centreOf(chosen);
+    if (isPerson(chosen.thing)) return <circle className="rl-selection" cx={cx} cy={cy} r={markerRadius * 1.35 + frameGap} />;
+    const [x, y] = toSvg(chosen.bounds.x0, chosen.bounds.y1);
+    return (
+      <rect
+        className="rl-selection"
+        x={x - frameGap}
+        y={y - frameGap}
+        width={chosen.bounds.x1 - chosen.bounds.x0 + frameGap * 2}
+        height={chosen.bounds.y1 - chosen.bounds.y0 + frameGap * 2}
+        rx={frameGap}
+      />
+    );
+  })();
+
   // Scale bar under the room's south-west corner; north arrow beyond its north-east corner.
   const barY = d / 2 + pad * 0.55;
   const barX = -w / 2;
@@ -489,6 +522,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
             you ? "rl-you" : "",
             p.thing.fixed && !isPerson(p.thing) ? "rl-fixed" : "",
             p.thing.mounted ? "rl-mounted" : "",
+            p.thing.id === selectedId ? "rl-selected" : "",
           ]
             .filter(Boolean)
             .join(" ");
@@ -506,6 +540,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
                 className={look?.body ? `${className} rl-dressed` : className}
                 data-id={p.thing.id}
                 style={look ? (style as React.CSSProperties) : undefined}
+                onClick={selectClick(p.thing.id)}
               >
                 <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
                 <circle className="rl-thing" cx={cx} cy={cy} r={r} />
@@ -515,7 +550,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
             );
           }
           return (
-            <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)}>
+            <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)} onClick={selectClick(p.thing.id)}>
               <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
               {body ? <polygon className="rl-thing" points={body.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} /> : p.footprints.map((f, index) => {
                 if (f.type === "circle") {
@@ -541,13 +576,15 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
       </g>
       <rect className="rl-wall" x={-w / 2} y={-d / 2} width={w} height={d} />
       <g>{exits}</g>
+      {selectionFrame}
       <g>
         {labels.map((l) => (
           <g key={l.id}>
             <text
-              className={
-                l.id === youId ? "rl-label rl-label-you" : personIds.has(l.id) ? "rl-label rl-label-person" : "rl-label"
-              }
+              className={[
+                l.id === youId ? "rl-label rl-label-you" : personIds.has(l.id) ? "rl-label rl-label-person" : "rl-label",
+                l.id === selectedId ? "rl-label-selected" : "",
+              ].filter(Boolean).join(" ")}
               x={l.x}
               y={l.y + fontSize * 0.35}
               fontSize={fontSize}
@@ -601,6 +638,9 @@ export function standaloneSvg(svg: SVGSVGElement, title: string, tokenSource: El
     copy.setAttribute("height", String(Math.round(h * pixelsPerMetre)));
   }
   copy.removeAttribute("tabindex");
+  // The file is the room, not the player's selection in it.
+  for (const frame of copy.querySelectorAll(".rl-selection")) frame.remove();
+  for (const marked of copy.querySelectorAll(".rl-selected, .rl-label-selected")) marked.classList.remove("rl-selected", "rl-label-selected");
   const computed = getComputedStyle(tokenSource);
   const declarations = LAYOUT_TOKENS.map((token) => [token, computed.getPropertyValue(token).trim()])
     .filter(([, value]) => value)

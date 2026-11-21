@@ -132,6 +132,8 @@ interface InteractTarget {
     key: string;
     name: string;
     command: string;
+    /** A thing (its key is its id, the shared selection's) rather than an exit. */
+    thing: boolean;
     /** The sound to play on landing here, as the server sent it (Char.Items earcon, Room.Info earcons). */
     earcon?: unknown;
 }
@@ -144,12 +146,13 @@ function interactTargets(): InteractTarget[] {
     const { itemsByLocation } = useItemsStore.getState();
     const things = [...(itemsByLocation.inv ?? []), ...(itemsByLocation.room ?? [])]
         .filter((item) => item.verbs === undefined || item.verbs.length > 0)
-        .map((item) => ({ key: item.id, name: item.name, command: `interact ${item.id}`, earcon: item.earcon }));
+        .map((item) => ({ key: item.id, name: item.name, command: `interact ${item.id}`, thing: true, earcon: item.earcon }));
     const roomInfo = useRoomStore.getState().roomInfo;
     const exits = Object.keys(roomInfo?.exits ?? {}).map((direction) => ({
         key: `exit ${direction}`,
         name: `${direction} exit`,
         command: `interact ${direction}`,
+        thing: false,
         earcon: roomInfo?.earcons?.[direction],
     }));
     return [...things, ...exits];
@@ -160,8 +163,9 @@ const NOTHING_TO_INTERACT_WITH = "Nothing here to interact with";
 export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
     private readonly boundKeyDownHandler = (event: KeyboardEvent) => this.handleKeydown(event);
     private keysHelp = false;
-    /** The key of the thing interact mode is on, or null when interact mode is off. */
-    private interactKey: string | null = null;
+    private interacting = false;
+    /** The exit interact mode last landed on; a thing it is on is the items store's one selection. */
+    private interactExit: string | null = null;
     private keysModeBeforeInteract = false;
 
     constructor(client: ConstructorParameters<typeof GMCPClientKeystrokesBase>[0]) {
@@ -182,9 +186,19 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         document.removeEventListener("keydown", this.boundKeyDownHandler, true);
     }
 
+    /**
+     * The key of the thing interact mode is on, or null when interact mode is off: the selected thing
+     * (wherever it was selected), else the exit it landed on. It matches no target once that has gone.
+     */
+    private get interactKey(): string | null {
+        if (!this.interacting) return null;
+        return useItemsStore.getState().selected?.id ?? this.interactExit ?? "";
+    }
+
     override reset(): void {
         this.keysHelp = false;
-        this.interactKey = null;
+        this.interacting = false;
+        this.interactExit = null;
         useKeystrokesStore.getState().clearLayers();
     }
 
@@ -221,7 +235,7 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         const { layers, keysMode, resumeOnSend } = useKeystrokesStore.getState();
         // Interact mode lives inside keys mode and ends with it, however keys mode ended. A pause
         // for typing (resumeOnSend) keeps the current thing for when keys mode comes back.
-        if (!keysMode && !resumeOnSend) this.interactKey = null;
+        if (!keysMode && !resumeOnSend) this.interacting = false;
         if (keysMode && this.interactKey !== null && this.handleInteractKey(event)) {
             event.preventDefault();
             event.stopPropagation();
@@ -303,9 +317,11 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         say(`${targets[next].name}, ${next + 1} of ${targets.length}`);
     }
 
-    /** Makes target the current thing and plays its earcon, if the server sent one. */
+    /** Makes target the current thing (selecting it, or nothing for an exit) and plays its earcon, if the server sent one. */
     private landOn(target: InteractTarget): void {
-        this.interactKey = target.key;
+        this.interacting = true;
+        this.interactExit = target.thing ? null : target.key;
+        useItemsStore.getState().select(target.thing ? target.key : null);
         if (target.earcon !== undefined) this.client.gmcp.handlers["Client.Media"]?.playEarcon(target.earcon);
     }
 
@@ -322,13 +338,16 @@ export class GMCPClientKeystrokes extends GMCPClientKeystrokesBase {
         const store = useKeystrokesStore.getState();
         this.keysModeBeforeInteract = store.keysMode;
         store.setKeysMode(true);
-        this.landOn(targets[0]);
-        say(`Interact mode on. ${targets[0].name}, 1 of ${targets.length}. Tab moves, Ctrl+I interacts, Escape ends.`);
+        // It starts on the thing already selected, when that is something to interact with.
+        const selectedId = useItemsStore.getState().selected?.id;
+        const start = Math.max(0, targets.findIndex((target) => target.thing && target.key === selectedId));
+        this.landOn(targets[start]);
+        say(`Interact mode on. ${targets[start].name}, ${start + 1} of ${targets.length}. Tab moves, Ctrl+I interacts, Escape ends.`);
     }
 
     /** Leaves interact mode, and keys mode too unless it was on before. */
     private endInteractMode(): void {
-        this.interactKey = null;
+        this.interacting = false;
         if (!this.keysModeBeforeInteract) useKeystrokesStore.getState().setKeysMode(false);
         say("Interact mode off");
     }

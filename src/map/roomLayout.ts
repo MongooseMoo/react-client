@@ -237,26 +237,27 @@ export function labelOrder(placed: PlacedThing[], youId: string): PlacedThing[] 
     );
 }
 
-/**
- * A thing's name with what it is and what it is made of, when the server
- * says: "coffee table (table, wood)". People are listed under People with
- * the server's label for them when it sends one: "Ann (the red-haired woman)".
- */
-export function namedWithKind(thing: LayoutThing, youId: string): string {
-  const name = displayName(thing, youId);
-  if (isPerson(thing)) {
-    const label = appearanceLabel(thing.appearance);
-    return label ? `${name} (${stripMudAnsiTags(label) || label})` : name;
-  }
-  const kind = [thing.classes?.[0], mainMaterial(thing)].filter(Boolean);
-  return kind.length > 0 ? `${name} (${kind.join(", ")})` : name;
+/** What a thing is and what it is made of, when the server says: "table, wood". "" when it says neither. */
+export function thingKind(thing: LayoutThing): string {
+  return [thing.classes?.[0], mainMaterial(thing)].filter(Boolean).join(", ");
 }
 
-export function describeThing(placed: PlacedThing, size: LayoutVector, youId: string): string {
-  const { thing, bounds } = placed;
-  const parts = [namedWithKind(thing, youId), describePlace(bounds, size)];
-  if (thing.mounted) parts.push(bounds.z0 > 0.05 ? `mounted ${metres(bounds.z0)} up` : "mounted");
-  else if (thing.fixed && thing.kind === "object") parts.push("fixed in place");
+/** The server's label for a person ("the red-haired woman"), colour markup removed; undefined when it sends none. */
+export function personLabel(thing: LayoutThing): string | undefined {
+  const label = appearanceLabel(thing.appearance);
+  return label ? stripMudAnsiTags(label) || label : undefined;
+}
+
+/**
+ * Where a thing is, in words. What it rests on is the server's (`relation.text`: "on the low table")
+ * when sent; otherwise its place by the walls from `bounds`, or "no size or place given" for a thing
+ * sent without shapes. Then how it is fixed, and its native details.
+ */
+export function describeWhere(thing: LayoutThing, bounds: Bounds | undefined, size: LayoutVector): string {
+  const parts: string[] = [];
+  if (typeof thing.relation?.text !== "string") parts.push(bounds ? describePlace(bounds, size) : "no size or place given");
+  if (bounds && thing.mounted) parts.push(bounds.z0 > 0.05 ? `mounted ${metres(bounds.z0)} up` : "mounted");
+  else if (bounds && thing.fixed && thing.kind === "object") parts.push("fixed in place");
   parts.push(...semanticDetails(thing));
   return parts.join(", ");
 }
@@ -273,24 +274,24 @@ export function semanticDetails(thing: LayoutThing): string[] {
   return details;
 }
 
-/** A thing the server sent without shapes: it is in the room but cannot be drawn. */
-export function describeUnshaped(thing: LayoutThing, youId: string): string {
-  return [namedWithKind(thing, youId), "no size or place given", ...semanticDetails(thing)].join(", ");
+/** A doorway named and placed: "west: 0.9 m doorway in the west wall, 1.3 m from the south wall". */
+export function describeExit(exit: LayoutExit, size: LayoutVector): string {
+  return `${stripMudAnsiTags(exit.name) || exit.name}: ${describeDoorway(exit, size)}`;
 }
 
-export function describeExit(exit: LayoutExit, size: LayoutVector): string {
+/** Where a doorway is, without its name, for beside the exit's own button. */
+export function describeDoorway(exit: LayoutExit, size: LayoutVector): string {
   const wall = exitWall(exit, size);
   const halfW = size[0] / 2;
   const halfD = size[1] / 2;
   const [x, y] = exit.at;
-  const name = stripMudAnsiTags(exit.name) || exit.name;
   if (wall === "north" || wall === "south") {
-    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+    return `${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
   }
   if (wall === "east" || wall === "west") {
-    return `${name}: ${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
+    return `${metres(exit.width)} doorway in the ${wall} wall, ${axisWords(halfD - y, y + halfD, "north", "south")}`;
   }
-  return `${name}: not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
+  return `not in a wall, ${axisWords(halfD - y, y + halfD, "north", "south")}, ${axisWords(halfW - x, x + halfW, "east", "west")}`;
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

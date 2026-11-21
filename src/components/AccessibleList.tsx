@@ -19,15 +19,25 @@ interface AccessibleListProps<T extends AccessibleListItem> {
   onActivate?: (index: number) => void;
   /** Surviving heading/control used only if this focused list is removed. */
   focusReturnId?: string;
+  /**
+   * Given (an id, or null for none), the selection is the caller's: the list shows it, reports each
+   * choice through `onSelect`, and selects nothing when the id is not one of its items.
+   */
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
 }
 
 const AccessibleList = <T extends AccessibleListItem>({
   items, renderItem, listId, labelledBy, className = '', itemClassName,
   getItemTextValue = (item) => (item.name || item.id || '').toString(),
-  onSelectedIndexChange, onActivate, focusReturnId,
+  onSelectedIndexChange, onActivate, focusReturnId, selectedId: givenId, onSelect,
 }: AccessibleListProps<T>) => {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const given = givenId !== undefined;
+  const [ownId, setSelectedId] = useState<string | null>(null);
+  const selectedId = given ? givenId : ownId;
   const previousIndex = useRef(0);
+  /** The id last selected in this list while the caller holds the selection; null once it is elsewhere. */
+  const heldId = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const notifiedSelection = useRef({ id: null as string | null, index: -1 });
   const selectionCallback = useRef(onSelectedIndexChange);
@@ -36,13 +46,24 @@ const AccessibleList = <T extends AccessibleListItem>({
   useFocusRecovery(containerRef, focusReturnId);
 
   const retainedIndex = items.findIndex((item) => item.id === selectedId);
+  /** The place the selection last held, as near as the list still goes. */
+  const lastPlace = () => Math.min(previousIndex.current, items.length - 1);
+  /** Where to start with nothing selected: the top, or the last place when the caller's selection left this list. */
+  const entryPlace = () => (given ? lastPlace() : 0);
   const selectedIndex = selectedId === null ? -1 : retainedIndex >= 0 ? retainedIndex :
-    items.length > 0 ? Math.min(previousIndex.current, items.length - 1) : -1;
+    items.length > 0 && !given ? lastPlace() : -1;
   const resolvedId = items[selectedIndex]?.id ?? null;
 
   useLayoutEffect(() => {
-    if (selectedId !== resolvedId) setSelectedId(resolvedId);
+    if (!given && selectedId !== resolvedId) setSelectedId(resolvedId);
     if (selectedIndex >= 0) previousIndex.current = selectedIndex;
+    if (given) {
+      // The caller dropped the selection because this list's selected item left. A person in the
+      // list is not left on nothing: the item now in that place is selected. Elsewhere it stays cleared.
+      const left = heldId.current !== null && selectedIndex < 0 && !items.some((item) => item.id === heldId.current);
+      heldId.current = resolvedId;
+      if (left && items.length > 0 && document.activeElement === containerRef.current) select(lastPlace());
+    }
     if (notifiedSelection.current.id !== resolvedId || notifiedSelection.current.index !== selectedIndex) {
       notifiedSelection.current = { id: resolvedId, index: selectedIndex };
       selectionCallback.current?.(selectedIndex);
@@ -51,18 +72,20 @@ const AccessibleList = <T extends AccessibleListItem>({
     if (resolvedId && document.activeElement === containerRef.current) {
       document.getElementById(`${listId}-item-${resolvedId}`)?.scrollIntoView({ block: 'nearest' });
     }
-  }, [selectedId, resolvedId, selectedIndex, listId]);
+  }, [given, selectedId, resolvedId, selectedIndex, listId]);
 
   const select = (index: number) => {
     previousIndex.current = index;
-    setSelectedId(items[index]?.id ?? null);
+    const id = items[index]?.id ?? null;
+    if (!given) setSelectedId(id);
+    else if (id !== null) onSelect?.(id);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!items.length || event.ctrlKey || event.metaKey || event.altKey) return;
     let next = selectedIndex;
     switch (event.key) {
-      case 'ArrowDown': next = (selectedIndex + 1) % items.length; break;
+      case 'ArrowDown': next = selectedIndex < 0 ? entryPlace() : (selectedIndex + 1) % items.length; break;
       case 'ArrowUp': next = selectedIndex < 0 ? items.length - 1 : (selectedIndex - 1 + items.length) % items.length; break;
       case 'Home': next = 0; break;
       case 'End': next = items.length - 1; break;
@@ -102,7 +125,7 @@ const AccessibleList = <T extends AccessibleListItem>({
     <div id={listId} className={`accessible-list-container ${className}`} ref={containerRef}
       tabIndex={0} role="listbox" aria-labelledby={labelledBy}
       aria-activedescendant={resolvedId ? `${listId}-item-${resolvedId}` : undefined}
-      onFocus={() => { if (selectedIndex < 0 && items.length) select(0); }}
+      onFocus={() => { if (selectedIndex < 0 && items.length) select(entryPlace()); }}
       onBlur={() => { typeahead.current = { text: '', time: 0 }; }} onKeyDown={handleKeyDown}>
       <ul role="none" className="accessible-list-ul">
         {items.map((item, index) => {

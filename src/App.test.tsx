@@ -135,10 +135,12 @@ vi.mock('./components/AutoLogDialog', async () => {
 
 vi.mock('./components/sidebar', async () => {
   const ReactModule = await vi.importActual<typeof import('react')>('react');
+  const { TabShownContext } = await vi.importActual<typeof import('./components/tabs')>('./components/tabs');
   return {
     default: ReactModule.forwardRef((props: { collapsed: boolean; onToggleCollapse: () => void }, ref) => {
       ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab, hasTab: () => true }));
-      return <button type="button" onClick={props.onToggleCollapse}>{props.collapsed ? 'Expand' : 'Collapse'}</button>;
+      // data-shown: what the app tells the sidebar about whether it is showing.
+      return <button type="button" data-shown={String(ReactModule.useContext(TabShownContext))} onClick={props.onToggleCollapse}>{props.collapsed ? 'Expand' : 'Collapse'}</button>;
     }),
   };
 });
@@ -303,5 +305,19 @@ describe('App haptics backend lifecycle', () => {
     fireEvent.keyDown(document, { ctrlKey: true, shiftKey: true, key: '#', code: 'Digit3' });
     await waitFor(() => expect(document.querySelector('aside')).not.toHaveAttribute('hidden'));
     expect(mockSwitchToTab).toHaveBeenLastCalledWith(2);
+  });
+
+  it('tells the sidebar it is not showing while the sidebar is hidden, so nothing in it keeps drawing', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Command' })).toHaveFocus());
+    const aside = document.querySelector('aside') as HTMLElement;
+    const told = () => aside.querySelector('button')?.getAttribute('data-shown');
+    await waitFor(() => expect(aside).not.toHaveAttribute('hidden'));
+    expect(told()).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    expect(aside).toHaveAttribute('hidden');
+    expect(told()).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    expect(told()).toBe('true');
   });
 });

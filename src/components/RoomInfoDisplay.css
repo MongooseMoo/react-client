@@ -45,6 +45,11 @@
     margin: 0;
 }
 
+/* With a layout each exit is its button and its doorway in words: one to a line. */
+.room-info-display .room-exits ul.room-exits-described {
+    flex-direction: column;
+}
+
 .room-info-display .room-exits button {
     background-color: var(--color-bg-surface);
     color: var(--color-text);
@@ -164,4 +169,23 @@
     margin-top: 1rem;
     border-top: 1px solid var(--color-border);
     padding-top: 1rem;
+}
+
+.room-person-portrait {
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+/* The selected thing's parts and drawers, under its card. */
+.room-thing-controls ul {
+    list-style: none;
+    margin: 0 0 var(--space-2);
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.room-thing-controls ul ul {
+    margin: var(--space-1) 0 0;
 }

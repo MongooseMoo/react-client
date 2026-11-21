@@ -25,6 +25,10 @@ import {
   DOLLHOUSE_FOV,
   DOLLHOUSE_NEAR,
   disposeRoomScene,
+  disposeSelectionOutline,
+  pickables,
+  scenePick,
+  selectionOutline,
   dollhouseMaxDistance,
   dollhousePose,
   EYES_FOV,
@@ -54,7 +58,8 @@ import { useSpatialStore } from "../stores/spatialStore";
  * The Room.Layout room in 3D: Dollhouse (orbit around it) or Your eyes (from
  * where you stand, facing where you face, turning as you turn). Loaded only
  * when one of those views is chosen, so three.js stays out of startup. It is
- * one image to a screen reader; RoomLayoutView's lists say the room in words.
+ * one image to a screen reader; the Room tab's lists say the room in words and
+ * hold the same selection this picture outlines.
  */
 
 interface RoomLayout3DProps {
@@ -63,9 +68,13 @@ interface RoomLayout3DProps {
   youId: string;
   label: string;
   mode: CameraMode;
+  /** The one selected thing or person (the items store's), outlined in the picture; null for none. */
+  selectedId: string | null;
+  /** A thing or person was clicked (not dragged across). */
+  onSelect: (id: string) => void;
   onExit: (name: string) => void;
   onFitting: (lifetime: string) => void;
-  onInspect?: (id: string, lifetime: string, role: string) => void;
+  onInspect: (id: string, lifetime: string, role: string) => void;
 }
 
 /** Space between a label and the top of what it names, CSS pixels. */
@@ -107,7 +116,21 @@ interface Stage {
   labelSizes: Map<string, { width: number; height: number }>;
   /** People's labels as last shown, screen boxes in CSS pixels from the picture's top left: the wheel picks a person by their label. */
   personLabels: Array<Box & { id: string }>;
+  /** The outline round the selected thing or person, when it is drawn. */
+  selection: THREE.Group | null;
   render: () => void;
+}
+
+/** Outlines the selected thing or person where it now is, marks its label, and clears the last outline. */
+function showSelection(stage: Stage, selectedId: string | null) {
+  if (stage.selection) disposeSelectionOutline(stage.selection);
+  stage.selection = null;
+  for (const [id, object] of stage.labelObjects) object.element.classList.toggle("rl3d-label-selected", id === selectedId);
+  const chosen = selectedId === null ? undefined : stage.placed.find((p) => p.thing.id === selectedId);
+  // What is not drawn (you, in your own eyes) gets no outline.
+  if (!chosen || !stage.room?.things.get(chosen.thing.id)?.visible) return;
+  stage.selection = selectionOutline(chosen.bounds);
+  stage.scene.add(stage.selection);
 }
 
 function webglAvailable(): boolean {
@@ -121,12 +144,14 @@ function applyPose(stage: Stage, pose: CameraPose) {
   stage.camera.lookAt(stage.controls.target);
 }
 
-const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, onExit, onFitting, onInspect }) => {
+const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, label, mode, selectedId, onSelect, onExit, onFitting, onInspect }) => {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const modeRef = useRef(mode);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [supported] = useState(webglAvailable);
   const listenerPosition = useSpatialStore((state) => state.listenerPosition);
   const listenerForward = useSpatialStore((state) => state.listenerOrientation.forward);
@@ -170,6 +195,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       labelObjects: new Map(),
       labelSizes: new Map(),
       personLabels: [],
+      selection: null,
       render: () => {
         if (stage.room) {
           cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
@@ -207,6 +233,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       observer?.disconnect();
       controls.removeEventListener("change", stage.render);
       controls.dispose();
+      if (stage.selection) disposeSelectionOutline(stage.selection);
       if (stage.room) disposeRoomScene(stage.room);
       stage.figures.dispose();
       renderer.dispose();
@@ -287,6 +314,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       }
       const you = stage.room.things.get(youId);
       if (you) you.visible = mode !== "eyes";
+      showSelection(stage, selectedIdRef.current);
       stage.render();
       return;
     }
@@ -336,6 +364,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       group.add(object);
       stage.labelObjects.set(id, object);
     }
+    showSelection(stage, selectedIdRef.current);
     stage.render();
     // Free the previous room only once the new one is drawn. three.js shares a
     // compiled shader between materials alike and deletes it when the last one is
@@ -343,6 +372,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     // which is every frame while anyone moves.
     if (previous) disposeRoomScene(previous);
   }, [layout, placed, youId, mode]);
+
+  // The selection changed (in a list, in this picture, by interact mode): outline it. Nothing else moves.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    showSelection(stage, selectedId);
+    stage.render();
+  }, [selectedId]);
 
   // A new room or a new view starts the dollhouse at its whole-room view.
   const youBounds = placed.find((p) => p.thing.id === youId)?.bounds;
@@ -373,7 +410,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     stage.render();
   }, [mode, layout, listenerPosition, listenerForward, youBounds?.x0, youBounds?.y0, youBounds?.z1]);
 
-  // A doorway click sends its exit, unless the pointer was turning the view.
+  // A click selects the thing or person under it, presses a part or drawer, or sends a doorway's
+  // exit, unless the pointer was turning the view. Moving the pointer over the picture selects nothing.
   const down = useRef<{ id: number; x: number; y: number } | null>(null);
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     onTouchPointer(event);
@@ -393,18 +431,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     );
     const ray = new THREE.Raycaster();
     ray.setFromCamera(pointer, stage.camera);
-    const room = stage.room;
-    const targets = layout.things.some((thing) => thing.form_boxes?.length) ? [
-      ...Array.from(room.things.values()).filter((thing) => thing.visible),
-      ...Object.values(room.walls), ...room.exits.filter((exit) => exit.parent === room.root),
-    ] : room.exits;
-    const hit = ray.intersectObjects(targets, true)[0];
-    if (hit?.object.userData.fitting) onFitting(hit.object.userData.fitting);
-    else if (hit?.object.userData.inspect) {
-      const [id, lifetime, role] = hit.object.userData.inspect;
-      onInspect?.(id, lifetime, role);
-    }
-    else if (hit?.object.userData.exit) onExitRef.current(hit.object.userData.exit);
+    const pick = scenePick(ray.intersectObjects(pickables(stage.room), true)[0]?.object);
+    if (pick?.kind === "fitting") onFitting(pick.lifetime);
+    else if (pick?.kind === "inspect") onInspect(pick.id, pick.lifetime, pick.role);
+    else if (pick?.kind === "exit") onExitRef.current(pick.name);
+    else if (pick?.kind === "thing") onSelect(pick.id);
   };
 
   /** Your eyes zoom by narrowing the field of view, as binoculars would; they stay where you stand. */

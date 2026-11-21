@@ -14,11 +14,14 @@ interface PlayerCardProps {
   focusFallbackId?: string;
   /** The player's Room.Layout appearance, when the room has a layout with them in it. */
   appearance?: unknown;
+  /** Where the player is, in words, when the room's layout says. */
+  where?: string;
 }
 
 const PlayerCard: React.FC<PlayerCardProps> = ({
   player,
   appearance,
+  where,
   onLook,
   onFollow,
   focusReturnId,
@@ -53,6 +56,7 @@ const PlayerCard: React.FC<PlayerCardProps> = ({
         <AvatarPortrait appearance={appearance} size={48} className="player-portrait" />
         <div className="player-name">{player.fullname}</div>
         {label && <div className="player-label">{label}</div>}
+        {where && <div className="player-label player-where">{where}</div>}
       </div>
       <div className="player-actions">
         <button
