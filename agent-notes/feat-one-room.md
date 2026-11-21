@@ -84,6 +84,24 @@ frame on a screen, and nobody has heard the Room tab with a screen reader.
 A trial merge in memory (`git merge-tree`) of this branch with the local
 `origin/fix/keystroke-bugs` (PR #254) reported no conflict.
 
+### Follow-up round (lead's three fixes)
+
+The lead accepted readings a (controls under the card), b (thing row is
+"name, where") and d (interact mode starts on the selected thing), and asked for:
+
+1. A person's row says where they are too (name, label, where). Not started.
+2. One Exits list in the Room tab: each exit button followed by its doorway
+   description; the view's own Exits list and heading removed. Not started.
+3. The room view must not draw or load three.js while the Room tab is hidden.
+   Not started.
+
+Read for fix 3: `tabs.tsx` hides an unselected panel with the `hidden`
+attribute and keeps its content mounted (unless `mountOnSelect` and never
+visited). `RoomLayout3D.tsx` has no animation loop: it draws when the orbit
+controls change, on resize, on a layout or selection change, and on a key or
+wheel. So while hidden it would still load three.js, build the scene and redraw
+on every layout update.
+
 ## Decisions and why
 
 - **The store's selection is `selected: { id, lifetime? } | null` with

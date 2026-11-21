@@ -28,10 +28,11 @@ const EMPTY_ITEMS: Item[] = [];
 const renderThing = (entry: RoomEntry) => <span>{entry.where ? `${entry.name}, ${entry.where}` : entry.name}</span>;
 const renderPerson = (entry: RoomEntry) => {
   const label = entry.thing && personLabel(entry.thing);
+  const named = label ? `${entry.name} (${label})` : entry.name;
   return (
     <span>
       <AvatarPortrait appearance={entry.thing?.appearance} size={32} className="room-person-portrait" />
-      {label ? `${entry.name} (${label})` : entry.name}
+      {entry.where ? `${named}, ${entry.where}` : named}
     </span>
   );
 };

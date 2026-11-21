@@ -145,10 +145,13 @@ describe("RoomInfoDisplay", () => {
     expect(screen.queryByRole("list", { name: "People in the layout" })).toBeNull();
   });
 
-  it("lists every person once, with portrait and the server's label, and not among the things", () => {
+  it("lists every person once, with portrait, the server's label and where they are, and not among the things", () => {
     enterSalon();
     renderTab();
-    expect(rows(people())).toEqual(["Ann (the red-haired woman)", "Ondine (you)"]);
+    expect(rows(people())).toEqual([
+      "Ann (the red-haired woman), 0.6 m from the south wall, near the west wall",
+      "Ondine (you), 0.6 m from the south wall, 0.5 m from the east wall",
+    ]);
     const ann = within(people()).getByRole("option", { name: /Ann/ });
     expect(ann.querySelector("svg.avatar-portrait")?.getAttribute("aria-hidden")).toBe("true");
     expect(rows(things()).some((row) => /Ann|Ondine/.test(row ?? ""))).toBe(false);
@@ -194,7 +197,7 @@ describe("RoomInfoDisplay", () => {
     expect(card.querySelector("svg.player-portrait")).not.toBeNull();
     fireEvent.click(within(card).getByRole("button", { name: "Follow Ann" }));
     expect(client.sendCommand).toHaveBeenCalledWith("follow ann");
-    expect(selectedRows()).toEqual(["Ann (the red-haired woman)"]);
+    expect(selectedRows()).toEqual(["Ann (the red-haired woman), 0.6 m from the south wall, near the west wall"]);
   });
 
   it("shows a selection made elsewhere (the picture, interact mode) as the selected row and card, without taking focus", () => {
@@ -206,7 +209,7 @@ describe("RoomInfoDisplay", () => {
     expect(document.querySelector('.item-card[data-item-id="#11"]')).not.toBeNull();
     expect(document.activeElement).toBe(before);
     act(() => useItemsStore.getState().select("#30"));
-    expect(selectedRows()).toEqual(["Ann (the red-haired woman)"]);
+    expect(selectedRows()).toEqual(["Ann (the red-haired woman), 0.6 m from the south wall, near the west wall"]);
     expect(document.querySelector(".item-card")).toBeNull();
     expect(document.querySelector("[aria-live]")).toBeNull();
   });
