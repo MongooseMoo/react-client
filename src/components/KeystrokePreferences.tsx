@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { announce } from "@react-aria/live-announcer";
 import { chordFromEvent, formatChord, isTypingChord } from "../keystrokeChords";
 import {
+  bindingId,
   bindingLabel,
   keyTakenBy,
   type KeystrokeLayer,
@@ -61,12 +62,13 @@ function KeyButton({ layer, resolved }: { layer: KeystrokeLayer; resolved: Resol
 
     const { layers } = useKeystrokesStore.getState();
     const { keystrokes, setKeystrokeOverride } = usePreferences.getState();
-    const taken = keyTakenBy(layers, keystrokes, chord, layer.id, resolved.binding.command);
+    const id = bindingId(resolved.binding);
+    const taken = keyTakenBy(layers, keystrokes, chord, layer.id, id);
     if (taken) {
       say(`${formatChord(chord)} is taken: ${taken}. Press another key, or Escape to cancel.`);
       return;
     }
-    setKeystrokeOverride(layer.id, resolved.binding.command, chord);
+    setKeystrokeOverride(layer.id, id, chord);
     setListening(false);
     keyTaken.current = true;
     say(`${label}: ${formatChord(chord)}`);

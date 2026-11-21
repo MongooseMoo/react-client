@@ -92,7 +92,7 @@ describe("KeystrokePreferencesTab", () => {
       return button;
     }
 
-    it("takes the next key pressed and remembers it for that layer and command", () => {
+    it("takes the next key pressed and remembers it for that layer and binding", () => {
       const button = startChanging(/Change key for Ship status/);
       expect(button).toHaveAccessibleName("Press the new key for Ship status, or Escape to cancel");
       expect(mockAnnounce).toHaveBeenLastCalledWith(
@@ -105,7 +105,7 @@ describe("KeystrokePreferencesTab", () => {
       fireEvent.keyDown(button, { key: "j", code: "KeyJ", ctrlKey: true });
 
       expect(usePreferences.getState().keystrokes).toEqual({
-        "#4936": { status: { key: "j", modifiers: ["ctrl"] } },
+        "#4936": { "key:ctrl+s": { key: "j", modifiers: ["ctrl"] } },
       });
       expect(mockAnnounce).toHaveBeenLastCalledWith("Ship status: Ctrl+J", "assertive", 2000);
       expect(button).toHaveAccessibleName("Change key for Ship status, now Ctrl+J");

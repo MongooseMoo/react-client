@@ -124,7 +124,7 @@ export type PrefState = {
   voiceInput: VoiceInputPreferences;
   status: StatusPreferences;
   // Keys the player chose for server key layers, keyed by layer id and then by
-  // the binding's command.
+  // bindingId (the key the server sent). Older choices are keyed by command.
   keystrokes: KeystrokeOverrides;
 };
 
@@ -146,7 +146,7 @@ type PrefActions = {
   setAutologging: (data: AutologgingPreferences) => void;
   setVoiceInput: (data: VoiceInputPreferences) => void;
   setStatus: (data: StatusPreferences) => void;
-  setKeystrokeOverride: (layerId: string, command: string, chord: Chord) => void;
+  setKeystrokeOverride: (layerId: string, bindingId: string, chord: Chord) => void;
 };
 
 const STORAGE_KEY = "preferences";
@@ -288,11 +288,11 @@ export const usePreferences = create<PrefState & PrefActions>()(
     setAutologging: (data) => set({ autologging: data }),
     setVoiceInput: (data) => set({ voiceInput: data }),
     setStatus: (data) => set({ status: data }),
-    setKeystrokeOverride: (layerId, command, chord) =>
+    setKeystrokeOverride: (layerId, bindingId, chord) =>
       set((s) => ({
         keystrokes: {
           ...s.keystrokes,
-          [layerId]: { ...s.keystrokes[layerId], [command]: chord },
+          [layerId]: { ...s.keystrokes[layerId], [bindingId]: chord },
         },
       })),
   })),
