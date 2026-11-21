@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import { suppliedHexes, TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN } from "../avatar/figure";
-import type { LayoutFormBox, RoomLayout } from "../gmcp/Room";
+import type { LayoutFormPart, RoomLayout } from "../gmcp/Room";
 import { EYE_PUPIL, EYE_WHITE } from "./figureMesh";
 import { crowdLayout, livingRoomLayout, translateLayoutThing, withBodyFacings } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingRoom from "./roomLayout.sample-25828.json";
 import { placeLabelsOver, placeThings } from "./roomLayout";
 import {
+  animateJoints,
   buildRoomScene,
+  jointPositions,
+  jointSwingMs,
+  JOINT_ANIMATION_MS,
   updateRoomBodies,
   CUT_WALL_HEIGHT,
   cutWalls,
@@ -67,14 +71,14 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
   return [...found].sort((a, b) => a - b);
 };
 
-describe("picking and the selection in 3D", () => {
-  /** What a ray from `from` toward `to` picks in the scene, as a click there would. */
-  const clickAlong = (scene: ReturnType<typeof buildRoomScene>, from: [number, number, number], to: [number, number, number]) => {
-    const origin = new THREE.Vector3(...from);
-    const ray = new THREE.Raycaster(origin, new THREE.Vector3(...to).sub(origin).normalize());
-    return scenePick(ray.intersectObjects(pickables(scene), true)[0]?.object);
-  };
+/** What a ray from `from` toward `to` picks in the scene, as a click there would. */
+const clickAlong = (scene: ReturnType<typeof buildRoomScene>, from: [number, number, number], to: [number, number, number]) => {
+  const origin = new THREE.Vector3(...from);
+  const ray = new THREE.Raycaster(origin, new THREE.Vector3(...to).sub(origin).normalize());
+  return scenePick(ray.intersectObjects(pickables(scene), true)[0]?.object);
+};
 
+describe("picking and the selection in 3D", () => {
   it("picks the thing or person a click lands on, by id", () => {
     const scene = build(livingRoomLayout());
     // Straight down onto the coffee table (#1, at the room's middle) and onto Person 1 (#9).
@@ -90,9 +94,9 @@ describe("picking and the selection in 3D", () => {
     const fitting = { id: "#123", name: "drawer", lifetime: "drawer-life", command: "open #123", opened: false, contents: [] };
     layout.things = [{ ...layout.things[0], id: "#236", lifetime: "desk-life", kind: "object",
       pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true },
-      form_boxes: [
-        { role: "slab", label: "slab", center: [0.25, 0, 0], size: [0.5, 1, 1] },
-        { center: [-0.25, 0, 0], size: [0.5, 1, 1], fitting },
+      form_parts: [
+        { role: "slab", label: "slab", shape: "box", center: [0.25, 0, 0], size: [0.5, 1, 1] },
+        { shape: "box", center: [-0.25, 0, 0], size: [0.5, 1, 1], fitting },
       ] }];
     const scene = build(layout);
     expect(clickAlong(scene, [0.25, 0, 2.4], [0.25, 0, 0])).toEqual({ kind: "inspect", id: "#236", lifetime: "desk-life", role: "slab" });
@@ -137,13 +141,13 @@ describe("picking and the selection in 3D", () => {
 });
 
 describe("buildRoomScene", () => {
-  it("paints individual form boxes with the MOO palette and falls back to the host material", () => {
+  it("paints individual form parts with the MOO palette and falls back to the host material", () => {
     const layout = livingRoomLayout();
     const fitting = { id: "#123", name: "drawer", lifetime: "1", command: "open #123", opened: false, contents: [] };
-    const part: LayoutFormBox = { center: [0, 0, 0], size: [1, 1, 1] };
+    const part: LayoutFormPart = { shape: "box", center: [0, 0, 0], size: [1, 1, 1] };
     layout.things = [{ ...layout.things[0], id: "#socket", kind: "object",
       pose: { centre_m: [0, 0, 1], dimensions_m: [1, 1, 2], body_quaternion: [1, 0, 0, 0], box: true },
-      form_boxes: [
+      form_parts: [
         part,
         { ...part, colour: { name: "green", hex: "#00ff00" } },
         { ...part, fitting, colour: { name: "black", hex: "#000000" } },
@@ -162,7 +166,7 @@ describe("buildRoomScene", () => {
     const layout = livingRoomLayout();
     layout.things = [{ ...layout.things[0], id: "#236", lifetime: "camera-life", kind: "object",
       pose: { centre_m: [3, 2, 1], dimensions_m: [2, 2, 2], body_quaternion: [1, 0, 0, 0], box: true },
-      form_boxes: [{ role: "screen", label: "screen", center: [0.25, 0, 0], size: [0.5, 1, 0.002],
+      form_parts: [{ role: "screen", label: "screen", shape: "box", center: [0.25, 0, 0], size: [0.5, 1, 0.002],
         basis: [[1, 0, 0], [0.6, 0.8, 0], [0, 0, 1]] }] }];
     const scene = build(layout);
     const [mesh] = meshes(scene.things.get("#236"));
@@ -173,6 +177,116 @@ describe("buildRoomScene", () => {
     expect(tip.z).toBeCloseTo(1.001, 5);
     disposeRoomScene(scene);
   });
+  it("draws each round shape filling its part's box, with its axis on basis 3, and inspects it by role", () => {
+    const layout = livingRoomLayout();
+    const shapes: LayoutFormPart[] = [
+      { shape: "cylinder", role: "post", label: "post", center: [-0.6, 0, 0], size: [0.2, 0.4, 0.8] },
+      { shape: "sphere", role: "knob", label: "knob", center: [-0.2, 0, 0], size: [0.2, 0.3, 0.4] },
+      { shape: "capsule", role: "pill", label: "pill", center: [0.2, 0, 0], size: [0.2, 0.2, 0.8] },
+      { shape: "cone", role: "spire", label: "spire", center: [0.6, 0, 0], size: [0.2, 0.2, 0.8], top: 0 },
+      // Lying along x: basis 3 points east.
+      { shape: "lathe", role: "vase", label: "vase", center: [0, 0.6, 0], size: [0.2, 0.2, 0.6],
+        basis: [[0, 1, 0], [0, 0, 1], [1, 0, 0]], profile: [[0.5, 0], [1, 0.5], [0.4, 1]] },
+    ];
+    layout.things = [{ ...layout.things[0], id: "#kit", lifetime: "kit-life", kind: "object",
+      pose: { centre_m: [0, 0, 1], dimensions_m: [2, 2, 2], body_quaternion: [1, 0, 0, 0], box: true }, form_parts: shapes }];
+    const scene = build(layout);
+    const drawn = meshes(scene.things.get("#kit"));
+    expect(drawn.map((mesh) => mesh.userData.part)).toEqual(["post", "knob", "pill", "spire", "vase"]);
+    const extent = (mesh: THREE.Mesh) => box(mesh).getSize(new THREE.Vector3()).toArray().map((n) => Number(n.toFixed(3)));
+    expect(extent(drawn[0])).toEqual([0.2, 0.4, 0.8]);
+    expect(extent(drawn[1])).toEqual([0.2, 0.3, 0.4]);
+    expect(extent(drawn[2])).toEqual([0.2, 0.2, 0.8]);
+    expect(extent(drawn[3])).toEqual([0.2, 0.2, 0.8]);
+    // The vase's widest ring (r 1 of 0.1 m) is halfway along it, its mouth 0.04 m across at the east end.
+    expect(extent(drawn[4])).toEqual([0.6, 0.2, 0.2]);
+    // Its cross-section is round: a ring vertex lies 0.1 m from the axis.
+    const position = drawn[4].geometry.getAttribute("position");
+    const widest = Math.max(...Array.from({ length: position.count }, (_, k) => Math.hypot(position.getX(k), position.getY(k))));
+    expect(widest).toBeCloseTo(0.5, 2);
+    // A capsule's caps are min(across)/2 = 0.1 m high: 0.1 m below its top it is full width.
+    const pill = drawn[2].geometry.getAttribute("position");
+    const fullAt = Array.from({ length: pill.count }, (_, k) => k).filter((k) => Math.hypot(pill.getX(k), pill.getY(k)) > 0.499).map((k) => pill.getZ(k));
+    expect(Math.max(...fullAt) * 0.8).toBeCloseTo(0.4 - 0.1, 3);
+    // A cone with top 0 ends in a point.
+    const spire = drawn[3].geometry.getAttribute("position");
+    const tip = Array.from({ length: spire.count }, (_, k) => k).filter((k) => spire.getZ(k) > 0.499);
+    expect(tip.every((k) => Math.hypot(spire.getX(k), spire.getY(k)) < 1e-9)).toBe(true);
+    expect(clickAlong(scene, [-0.2, 0, 2.4], [-0.2, 0, 0])).toEqual({ kind: "inspect", id: "#kit", lifetime: "kit-life", role: "knob" });
+    disposeRoomScene(scene);
+  });
+
+  it("draws a hollow cup and an open box with an outside, a rim and an inside down to the cavity floor", () => {
+    const layout = livingRoomLayout();
+    const cup: LayoutFormPart = { shape: "cylinder", role: "cup", label: "cup", center: [-0.3, 0, 0], size: [0.2, 0.2, 0.2], wall: [0.01, 0.02, 0.03] };
+    const tray: LayoutFormPart = { shape: "box", role: "tray", label: "tray", center: [0.3, 0, 0], size: [0.4, 0.4, 0.2], wall: [0.02, 0.02, 0.05] };
+    layout.things = [{ ...layout.things[0], id: "#set", lifetime: "set-life", kind: "object",
+      pose: { centre_m: [0, 0, 0.1], dimensions_m: [1, 0.4, 0.2], body_quaternion: [1, 0, 0, 0], box: true }, form_parts: [cup, tray] }];
+    const scene = build(layout);
+    const [cupMesh, trayMesh] = meshes(scene.things.get("#set"));
+    // Straight down the middle of each: the first surface is the cavity floor, wz above the bottom, not a lid.
+    const down = (x: number) => {
+      const ray = new THREE.Raycaster(new THREE.Vector3(x, 0, 1), new THREE.Vector3(0, 0, -1));
+      return ray.intersectObjects([cupMesh, trayMesh])[0];
+    };
+    expect(down(-0.3).point.z).toBeCloseTo(0.03, 5);
+    expect(down(0.3).point.z).toBeCloseTo(0.05, 5);
+    // Through the cup's side, level with its middle (only faces turned toward the ray are hit): its outside
+    // 0.1 m out, then the far inside wall 0.08 m out along y (where the wall is 0.02 m), facing into the cavity.
+    const across = new THREE.Raycaster(new THREE.Vector3(-0.3, -1, 0.1), new THREE.Vector3(0, 1, 0)).intersectObject(cupMesh);
+    expect(across.map((hit) => Number(hit.point.y.toFixed(2)))).toEqual([-0.1, 0.08]);
+    const facing = across.map((hit) => hit.face?.normal.clone().transformDirection(cupMesh.matrixWorld).y ?? 0);
+    expect(facing.every((y) => y < 0)).toBe(true);
+    // Its rim is at the top, between the two walls.
+    expect(new THREE.Raycaster(new THREE.Vector3(-0.3, -0.09, 1), new THREE.Vector3(0, 0, -1)).intersectObject(cupMesh)[0].point.z).toBeCloseTo(0.2, 5);
+    disposeRoomScene(scene);
+  });
+
+  it("draws a jointed part where its joint has it, and swings it there from where it was drawn", () => {
+    const fitting = { id: "#123", name: "drawer", lifetime: "drawer-life", command: "close #123", opened: true, contents: [] };
+    const withParts = (door: number, drawer: number) => {
+      const layout = livingRoomLayout();
+      layout.things = [{ ...layout.things[0], id: "#cab", lifetime: "cab-life", kind: "object",
+        pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true }, form_parts: [
+          { shape: "box", role: "door", label: "door", center: [0.2, -0.5, 0], size: [0.4, 0.02, 1],
+            joint: { type: "hinge", axis: [0, 0, -1], origin: [0, -0.5, 0], range: [0, Math.PI / 2], position: door } },
+          { shape: "box", center: [-0.25, 0, 0], size: [0.4, 0.9, 0.2], fitting,
+            joint: { type: "slide", axis: [0, -1, 0], range: [0, 0.4], position: drawer } },
+        ] }];
+      return layout;
+    };
+    const closed = build(withParts(0, 0));
+    const open = build(withParts(Math.PI / 2, 0.3));
+    const [door, drawer] = meshes(open.things.get("#cab"));
+    // Right-handed about straight down: the leaf's far edge, at rest at x 0.4 on the front, swings 0.4 m out in front of the hinge.
+    const edge = door.localToWorld(new THREE.Vector3(0.5, 0, 0));
+    expect([edge.x, edge.y].map((n) => Number(n.toFixed(6)))).toEqual([0, -0.9]);
+    expect(box(drawer).min.y).toBeCloseTo(-0.75);
+    expect(clickAlong(open, [-0.25, -0.7, 2.4], [-0.25, -0.7, 0])).toEqual({ kind: "fitting", lifetime: "drawer-life" });
+    // Rebuilt for the open layout, it starts where the closed one was drawn and eases there.
+    const steps: Array<(time: number) => void> = [];
+    let frames = 0;
+    const stop = animateJoints(open, jointPositions(closed), () => { frames++; }, 200, (step) => steps.push(step), () => {});
+    expect(box(drawer).min.y).toBeCloseTo(-0.45);
+    steps.shift()?.(1000);
+    steps.shift()?.(1100);
+    expect(box(drawer).min.y).toBeCloseTo(-0.6);
+    steps.shift()?.(1200);
+    expect(box(drawer).min.y).toBeCloseTo(-0.75);
+    expect(steps).toHaveLength(0);
+    expect(frames).toBe(3);
+    stop();
+    // Reduced motion, as RoomLayout3D asks it: no swing, no frame scheduled, the part drawn at once at its new pose.
+    const reduced = (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" });
+    expect(jointSwingMs(reduced)).toBe(0);
+    expect(jointSwingMs(() => ({ matches: false }))).toBe(JOINT_ANIMATION_MS);
+    expect(jointSwingMs(undefined)).toBe(JOINT_ANIMATION_MS);
+    const again = build(withParts(Math.PI / 2, 0.3));
+    animateJoints(again, jointPositions(closed), () => {}, jointSwingMs(reduced), () => { throw new Error("scheduled a frame"); });
+    expect(box(meshes(again.things.get("#cab"))[1]).min.y).toBeCloseTo(-0.75);
+    for (const scene of [closed, open, again]) disposeRoomScene(scene);
+  });
+
   it("draws native sitting posture without requiring a person's appearance record", () => {
     const layout = livingRoomLayout();
     layout.things = [{ ...layout.things[0], id: "#plain", kind: "person", appearance: undefined,

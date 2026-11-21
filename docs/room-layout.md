@@ -282,12 +282,58 @@ On the trestle writing desk in the Balmoral Towers office, inspecting the slab
 sends the same command as typing `look writing-slab on trestle writing desk`.
 When two parts on one host share a label, their buttons include their role paths.
 
-The MOO sends each host's visible `form_boxes` in room snapshots and body
-updates. Each box has a stable `role` path, a display `label`, and a `center`
+The MOO sends each host's visible `form_parts` in room snapshots and body
+updates. Each part has a stable `role` path, a display `label`, and a `center`
 in metres relative to the host's pose centre. The three values in `size` give
-the edge lengths in metres. Each corresponding `basis` vector points along that
-edge in host-local coordinates. A builder can change the parts by choosing a
-different construction in `@autoform`. Anyone watching receives the new parts.
+the part's box in metres. Each corresponding `basis` vector (a unit column)
+points along that side in host-local coordinates. A builder can change the parts
+by choosing a different construction in `@autoform`. Anyone watching receives the new parts.
+
+Every part has a `shape`: `box`, `cylinder`, `sphere`, `capsule`, `cone` or `lathe`.
+Each shape fills its box. Its axis is basis 3, from `-size[2]/2` (bottom) to
+`+size[2]/2` (top). A round shape's cross-section is an ellipse `size[0]` by `size[1]` across.
+
+- `cylinder`: an elliptic cylinder.
+- `sphere`: an ellipsoid of diameters `size`.
+- `capsule`: a cylinder with half-ellipsoid end caps, each `min(size[0], size[1])/2` high, `size[2]` long in all.
+- `cone`: a frustum. `top` (0 to 1) is the top diameter over the bottom one; 0 is a point.
+- `lathe`: `profile`, a list of `[r, z]` pairs, is revolved about the axis. `r` is the radius as a
+  fraction of the half-extent (0 to 1, scaled by `size[0]/2` and `size[1]/2`); `z` is the height
+  fraction from the bottom (0 to 1). The client draws it from bottom to top and closes an end
+  whose radius is not 0.
+
+An optional `wall` `[wx, wy, wz]`, metres along basis 1, 2 and 3, makes the part hollow.
+A `box`, `cylinder`, `cone` or `lathe` is open at the top: its cavity is the same shape
+`[a - 2wx, b - 2wy, c - wz]` with its floor `wz` above the bottom, and Dollhouse and Your eyes
+draw its outside, rim and inside, so a cup or a bowl reads as hollow. A `sphere` or `capsule` is
+a closed shell (cavity `[a - 2wx, b - 2wy, c - 2wz]`, same centre); only its outside is drawn.
+
+A part that moves carries a `joint`. Its `center` and `basis` are then its rest pose:
+
+- `type`: `hinge` or `slide`.
+- `axis`: a unit vector in the host-local frame, the same frame as `center` and `basis`.
+- `origin`: the hinge's pivot, host-local metres. Hinges only.
+- `range`: `[min, max]`, radians for a hinge, metres for a slide.
+- `position`: where the part is now, inside `range`.
+
+A hinge turns the part `position` radians about `axis` through `origin` (right-hand rule: a
+positive turn about an axis pointing up is anticlockwise seen from above). A slide moves it
+`position` metres along `axis`. An open drawer arrives at rest with a slide joint whose position
+is how far it is pulled out; a part that is not seen is not sent.
+
+Every view draws a jointed part where its joint has it now. When a new Layout moves a part of the
+same thing (matched by its `role`, or by its drawer when it has no role), Dollhouse and Your eyes
+swing or slide it there from where it was drawn, in a quarter of a second. With reduced motion
+asked for in the system settings, it is drawn at once in its new place.
+
+A list holding any part the client cannot draw (no or unknown `shape`, a cone without `top`, a lathe
+without at least two `[r, z]` pairs in 0 to 1, a wall as thick as its part, a joint with an unknown
+type, an axis that is not a unit vector, a hinge without `origin`, or a `position` outside `range`)
+is not drawn at all.
+
+The Plan draws a thing with parts as its parts seen from above, the highest over the rest: an
+upright round part as an ellipse the size of its widest ring, any other part as its outline.
+It draws no table, seat or door symbol over such a thing; its parts show what it is.
 
 ### Using a fitted drawer
 
@@ -297,7 +343,7 @@ after the drawer button. **Get** takes the named object. In Dollhouse and Your
 eyes, clicking the visible drawer face selects the desk and activates the same button. A person
 using ordinary text commands can open, close or empty the drawer while you watch.
 
-A box bound to a drawer also carries
+A part bound to a drawer also carries
 `fitting` with the real drawer's `id`, `lifetime`, `name`, `opened`, current
 `command` and visible `contents`. Each visible item has its own identity and
 get command. A closed drawer has an empty contents list. An empty command

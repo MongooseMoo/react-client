@@ -36,34 +36,77 @@ describe("Room.Layout", () => {
   it("accepts the office trestle from the wire and rejects malformed role and basis updates", () => {
     const layout = { ...sampleLayout(), room_lifetime: "office", things: [trestle] };
     room.receive("Layout", layout);
-    const boxes = () => useRoomStore.getState().roomLayout?.things[0].form_boxes;
-    expect(boxes()).toEqual(trestle.form_boxes);
+    const boxes = () => useRoomStore.getState().roomLayout?.things[0].form_parts;
+    expect(boxes()).toEqual(trestle.form_parts);
     const update = (part: unknown) => room.receive("LayoutUpdate", {
-      num: layout.num, room_lifetime: layout.room_lifetime, bodies: [{ ...trestle, form_boxes: [part] }],
+      num: layout.num, room_lifetime: layout.room_lifetime, bodies: [{ ...trestle, form_parts: [part] }],
     });
-    update({ ...trestle.form_boxes[0], role: "slab\nlook" });
-    expect(boxes()).toEqual(trestle.form_boxes);
-    update({ ...trestle.form_boxes[0], basis: [[1, 0, 0], [0, 0, 0], [0, 0, 1]] });
-    expect(boxes()).toEqual(trestle.form_boxes);
-    update(trestle.form_boxes[1]);
-    expect(boxes()).toEqual([trestle.form_boxes[1]]);
+    update({ ...trestle.form_parts[0], role: "slab\nlook" });
+    expect(boxes()).toEqual(trestle.form_parts);
+    update({ ...trestle.form_parts[0], basis: [[1, 0, 0], [0, 0, 0], [0, 0, 1]] });
+    expect(boxes()).toEqual(trestle.form_parts);
+    update(trestle.form_parts[1]);
+    expect(boxes()).toEqual([trestle.form_parts[1]]);
+  });
+
+  it("accepts every part shape with its own fields and drops a list holding a part it cannot draw", () => {
+    const base = { center: [0, 0, 0], size: [0.1, 0.1, 0.2] };
+    const good = [
+      { ...base, shape: "box", wall: [0.01, 0.01, 0.01] },
+      { ...base, shape: "cylinder", wall: [0.005, 0.005, 0.01] },
+      { ...base, shape: "sphere" },
+      { ...base, shape: "capsule", wall: [0.01, 0.01, 0.02] },
+      { ...base, shape: "cone", top: 0 },
+      { ...base, shape: "lathe", profile: [[0.5, 0], [1, 0.4], [0.3, 1]] },
+    ];
+    const parts = (form_parts: unknown[]) => {
+      room.receive("Layout", { ...sampleLayout(), things: [{ ...trestle, form_parts }] });
+      return useRoomStore.getState().roomLayout?.things[0].form_parts;
+    };
+    expect(parts(good)).toEqual(good);
+    for (const bad of [
+      { ...base },
+      { ...base, shape: "torus" },
+      { ...base, shape: "cone" },
+      { ...base, shape: "cone", top: 1.5 },
+      { ...base, shape: "lathe", profile: [[0.5, 0]] },
+      { ...base, shape: "lathe", profile: [[2, 0], [1, 1]] },
+      { ...base, shape: "cylinder", wall: [0.05, 0.01, 0.01] },
+      { ...base, shape: "box", wall: [0.01, 0.01, 0.2] },
+      // A closed shell needs room for its wall at both ends.
+      { ...base, shape: "sphere", wall: [0.01, 0.01, 0.1] },
+    ]) expect(parts([good[0], bad])).toBeUndefined();
+    const door = { ...base, shape: "box", joint: { type: "hinge", axis: [0, 0, 1], origin: [0.05, 0, 0], range: [0, 1.6], position: 0.4 } };
+    const drawer = { ...base, shape: "box", joint: { type: "slide", axis: [0, -1, 0], range: [0, 0.3], position: 0.3 } };
+    expect(parts([door, drawer])).toEqual([door, drawer]);
+    for (const joint of [
+      { ...door.joint, type: "ball" },
+      { ...door.joint, axis: [0, 0, 2] },
+      { ...door.joint, origin: undefined },
+      { ...door.joint, range: [1.6, 0] },
+      { ...door.joint, position: 2 },
+      { ...drawer.joint, position: undefined },
+    ]) expect(parts([door, { ...base, shape: "box", joint }])).toBeUndefined();
+    // The old spelling is not read.
+    room.receive("Layout", { ...sampleLayout(), things: [{ ...trestle, form_parts: undefined, form_boxes: trestle.form_parts }] });
+    expect(useRoomStore.getState().roomLayout?.things[0].form_parts).toBeUndefined();
   });
 
   it("refreshes and clears fitted parts on native body updates for the same host incarnation", () => {
     const layout = { ...sampleLayout(), room_lifetime: "current-room",
       things: [{ ...fittedDesk, name: "a wooden desk", kind: "object", mounted: false, fixed: false }] };
     room.receive("Layout", layout);
-    const fittingBoxes = () => useRoomStore.getState().roomLayout?.things[0].form_boxes;
-    expect(fittingBoxes()).toEqual(fittedDesk.form_boxes);
+    const fittingBoxes = () => useRoomStore.getState().roomLayout?.things[0].form_parts;
+    expect(fittingBoxes()).toEqual(fittedDesk.form_parts);
     const update = (body: unknown) => room.receive("LayoutUpdate",
       { num: layout.num, room_lifetime: layout.room_lifetime, bodies: [body] });
-    const { form_boxes, ...bare } = fittedDesk;
+    const { form_parts, ...bare } = fittedDesk;
     update({ ...bare, lifetime: "recycled" });
-    expect(fittingBoxes()).toEqual(form_boxes);
+    expect(fittingBoxes()).toEqual(form_parts);
     update(bare);
     expect(fittingBoxes()).toBeUndefined();
     update(fittedDesk);
-    expect(fittingBoxes()).toEqual(form_boxes);
+    expect(fittingBoxes()).toEqual(form_parts);
   });
 
   it("accepts the real MOO front/pose/finish projection and matching physical updates", () => {

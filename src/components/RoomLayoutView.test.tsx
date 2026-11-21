@@ -79,6 +79,23 @@ describe("RoomLayoutView", () => {
     expect(screen.getByRole("img").querySelector('[data-id="#7"]')).toBeNull();
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain("1 person");
   });
+  it("draws a thing built of parts as its parts from above: a round top as an ellipse, a square box as a polygon", () => {
+    const layout = sampleLayout();
+    const table = layout.things[0];
+    layout.things[0] = { ...table, pose: { centre_m: [0, 0, 0.375], dimensions_m: [0.8, 0.8, 0.75], body_quaternion: [1, 0, 0, 0], box: true },
+      form_parts: [
+        { shape: "cylinder", center: [0, 0, 0.35], size: [0.8, 0.6, 0.05] },
+        { shape: "box", center: [0, 0, -0.025], size: [0.1, 0.1, 0.7] },
+      ] };
+    render(view(layout));
+    const drawn = screen.getByRole("img").querySelector(`[data-id="${table.id}"]`) as SVGGElement;
+    // The low leg first, so the top is drawn over it; no box outline and no generic leg dots.
+    expect([...drawn.querySelectorAll(".rl-thing")].map((shape) => shape.tagName)).toEqual(["polygon", "ellipse"]);
+    expect(drawn.querySelectorAll(".rl-symbol")).toHaveLength(0);
+    const top = drawn.querySelector("ellipse") as SVGEllipseElement;
+    expect([top.getAttribute("rx"), top.getAttribute("ry")]).toEqual(["0.4", "0.3"]);
+  });
+
   it("labels the picture with the room's size and counts, and titles every shape", () => {
     renderView();
     const picture = screen.getByRole("img");

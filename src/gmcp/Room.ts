@@ -62,11 +62,40 @@ export interface LayoutFitting extends LayoutDrawerItem {
   contents: LayoutDrawerItem[];
 }
 
-/** Authored boxes in metres, relative to the centre and axes of the host's pose. */
-export interface LayoutFormBox {
+/**
+ * A hinge turns its part `position` radians about `axis` through `origin` (right-hand rule); a slide moves it
+ * `position` metres along `axis`. Axis and origin are host-local, like a part's centre and basis.
+ */
+export interface LayoutJoint {
+  type: "hinge" | "slide";
+  axis: LayoutVector;
+  /** Hinges only: the pivot, metres. */
+  origin?: LayoutVector;
+  /** Radians for a hinge, metres for a slide. */
+  range: [number, number];
+  position: number;
+}
+
+export type LayoutPartShape ="box" | "cylinder" | "sphere" | "capsule" | "cone" | "lathe";
+
+/**
+ * One authored part, in metres, relative to the centre and axes of the host's pose. Every shape fills the box
+ * `center`/`size`/`basis`: its axis is basis column 3, from -size[2]/2 (bottom) to +size[2]/2 (top), and a round
+ * shape's cross-section is an ellipse size[0] x size[1] across.
+ */
+export interface LayoutFormPart {
+  shape: LayoutPartShape;
   center: LayoutVector;
   size: LayoutVector;
   basis?: [LayoutVector, LayoutVector, LayoutVector];
+  /** Cone only: top diameter over bottom diameter, 0 (a point) to 1. */
+  top?: number;
+  /** Lathe only: `[r, z]` pairs revolved about the axis; r a fraction of the half-extent, z of the height from the bottom. */
+  profile?: Array<[number, number]>;
+  /** Wall thickness in metres along basis 1, 2, 3: hollow. Box, cylinder, cone and lathe are open at the top. */
+  wall?: LayoutVector;
+  /** How the part moves. With a joint, `center` and `basis` are its rest pose and `position` says where it is now. */
+  joint?: LayoutJoint;
   role?: string;
   label?: string;
   /** MOO palette entry for this part. The renderer reads its validated hex value. */
@@ -81,7 +110,7 @@ export interface LayoutBody {
   shapes: LayoutShape[];
   front?: LayoutFront;
   relation?: LayoutRelation;
-  form_boxes?: LayoutFormBox[];
+  form_parts?: LayoutFormPart[];
 }
 
 export interface RoomLayoutUpdate {
@@ -121,7 +150,7 @@ export interface LayoutThing {
   front?: LayoutFront;
   relation?: LayoutRelation;
   state?: { opened?: boolean; lit?: boolean; mode?: string };
-  form_boxes?: LayoutFormBox[];
+  form_parts?: LayoutFormPart[];
   /** Acoustic snapshot origin; never a physical drawing position. */
   origin?: LayoutVector;
   /** Registered `$` names of the thing's ancestors, nearest first (`table`, `furniture`, `thing`). */
@@ -228,10 +257,29 @@ const namedTarget = (value: unknown): value is LayoutDrawerItem =>
   typeof value.name === "string" && typeof value.lifetime === "string" && !!value.lifetime &&
   typeof value.command === "string";
 
-function validFormBox(value: unknown): value is LayoutFormBox {
+const unit = (value: unknown): value is LayoutVector => vector(value) && Math.abs(Math.hypot(...value) - 1) < 0.001;
+const fraction = (value: unknown): value is number => finite(value) && value >= 0 && value <= 1;
+const SHAPES: readonly LayoutPartShape[] = ["box", "cylinder", "sphere", "capsule", "cone", "lathe"];
+
+function validFormPart(value: unknown): value is LayoutFormPart {
   if (!record(value) || !vector(value.center) || !vector(value.size) || !value.size.every((n) => n > 0)) return false;
+  const shape = value.shape;
+  if (typeof shape !== "string" || !SHAPES.includes(shape as LayoutPartShape)) return false;
+  if (shape === "cone" && !fraction(value.top)) return false;
+  if (shape === "lathe" && !(Array.isArray(value.profile) && value.profile.length >= 2 &&
+    value.profile.every((point: unknown) => Array.isArray(point) && point.length === 2 && point.every(fraction)))) return false;
+  if (value.wall !== undefined) {
+    const [a, b, c] = value.size;
+    const closed = shape === "sphere" || shape === "capsule";
+    if (!vector(value.wall) || !value.wall.every((n) => n >= 0) || 2 * value.wall[0] >= a || 2 * value.wall[1] >= b ||
+      (closed ? 2 : 1) * value.wall[2] >= c) return false;
+  }
   if (value.basis !== undefined && !(Array.isArray(value.basis) && value.basis.length === 3 &&
-    value.basis.every((axis) => vector(axis) && Math.abs(Math.hypot(...axis) - 1) < 0.001))) return false;
+    value.basis.every(unit))) return false;
+  const joint = value.joint;
+  if (joint !== undefined && !(record(joint) && (joint.type === "hinge" || joint.type === "slide") && unit(joint.axis) &&
+    (joint.type === "slide" || vector(joint.origin)) && pair(joint.range) && finite(joint.position) &&
+    joint.position >= joint.range[0] - 1e-9 && joint.position <= joint.range[1] + 1e-9)) return false;
   if (value.role !== undefined || value.label !== undefined) {
     if (typeof value.role !== "string" || !value.role.trim() || /[\r\n\0]/.test(value.role) ||
       typeof value.label !== "string" || !value.label.trim()) return false;
@@ -244,7 +292,7 @@ function validFormBox(value: unknown): value is LayoutFormBox {
       namedTarget(item) && (!item.command || item.command === `get ${item.id} from ${fitting.id}`));
 }
 
-const validFormBoxes = (value: unknown): value is LayoutFormBox[] => Array.isArray(value) && value.every(validFormBox);
+const validFormParts = (value: unknown): value is LayoutFormPart[] => Array.isArray(value) && value.every(validFormPart);
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];
 const shape = (value: unknown): value is LayoutShape => record(value) && (
@@ -265,7 +313,7 @@ export function isLayoutPose(pose: unknown): pose is LayoutPose {
 function body(value: unknown): value is LayoutBody {
   return record(value) && typeof value.id === "string" && typeof value.lifetime === "string" && isLayoutPose(value.pose) &&
     Array.isArray(value.shapes) && value.shapes.every(shape) &&
-    (value.form_boxes === undefined || validFormBoxes(value.form_boxes)) &&
+    (value.form_parts === undefined || validFormParts(value.form_parts)) &&
     (value.front === undefined || (record(value.front) && vector(value.front.axis) &&
       finite(value.front.yaw) && typeof value.front.direction === "string")) &&
     (value.relation === undefined || (record(value.relation) && typeof value.relation.kind === "string" &&
@@ -305,8 +353,8 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
     this.on("layout", (data) => useRoomStore.getState().setRoomLayout({
       ...data,
-      things: data.things.map((thing) => thing.form_boxes === undefined || validFormBoxes(thing.form_boxes)
-        ? thing : { ...thing, form_boxes: undefined }),
+      things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
+        ? thing : { ...thing, form_parts: undefined }),
     }));
     this.on("layoutUpdate", (data) => {
       if (layoutUpdate(data)) useRoomStore.getState().updateRoomLayout(data);

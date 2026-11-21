@@ -17,15 +17,15 @@ interface RoomThingControlsProps {
 
 /**
  * The selected thing's authored parts (Inspect) and fitted drawers (Open or Close, and Get for each
- * visible item), from its Room.Layout `form_boxes`. Every command is the server's own or the native
+ * visible item), from its Room.Layout `form_parts`. Every command is the server's own or the native
  * `look <role> on <id>`. Renders nothing for a thing with neither.
  */
 const RoomThingControls: React.FC<RoomThingControlsProps> = ({ thing, name, onCommand, buttons }) => {
   const { id, lifetime } = thing;
   const parts = lifetime && /^#\d+$/.test(id)
-    ? (thing.form_boxes ?? []).flatMap(({ role, label, fitting }) => role && label && !fitting ? [{ role, label }] : [])
+    ? (thing.form_parts ?? []).flatMap(({ role, label, fitting }) => role && label && !fitting ? [{ role, label }] : [])
     : [];
-  const fittings = new Map(thing.form_boxes?.flatMap(({ fitting }) => fitting ? [[fitting.lifetime, fitting] as const] : []));
+  const fittings = new Map(thing.form_parts?.flatMap(({ fitting }) => fitting ? [[fitting.lifetime, fitting] as const] : []));
   if (parts.length === 0 && fittings.size === 0) return null;
   const keep = (key: string) => (node: HTMLButtonElement | null) => {
     if (node) buttons.current.set(key, node);
