@@ -93,8 +93,15 @@ to the client and no layer can bind it. Interact mode is keys mode with a curren
 player carries (`Char.Items` `inv`), who and what is in the room (`room`), then the room's exits
 (`Room.Info` `exits`). An item whose `verbs` is an empty list is left out.
 
+The thing interact mode is on is the client's one selection (`docs/room-layout.md`, "The Room tab"):
+landing on a thing selects it, so it is the selected row in the Room tab's or Inventory tab's list
+and the outlined thing in the room picture; landing on an exit selects nothing. A thing selected
+there while interact mode is on (a row, a click in the picture) becomes the thing Ctrl+I acts on
+and Tab moves on from. Ending interact mode leaves the selection as it is. Focus does not move.
+
 - Turning it on says "Interact mode on. lamp, 1 of 4. Tab moves, Ctrl+I interacts, Escape ends." With
-  nothing around it says "Nothing here to interact with" and stays off.
+  nothing around it says "Nothing here to interact with" and stays off. It starts on the thing already
+  selected when that is one of its things ("chest, 2 of 4"), otherwise on the first.
 - **Tab** and **Shift+Tab** move to the next and previous thing and say "chest, 2 of 4". An exit is
   said as "north exit".
 - Landing on a thing (turning interact mode on, Tab, Shift+Tab) plays its **earcon**: the item's

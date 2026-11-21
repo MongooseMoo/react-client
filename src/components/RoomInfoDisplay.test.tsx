@@ -236,6 +236,22 @@ describe("RoomInfoDisplay", () => {
     expect(useItemsStore.getState().selected).toBeNull();
   });
 
+  it("returns focus to the list, on the row now in that place, when the selected thing leaves from under its focused card", async () => {
+    enterSalon();
+    useItemsStore.getState().setLocationItems("room", [
+      { id: "#40", name: "a draught", verbs: [["feel", "#40"]] },
+      { id: "#41", name: "a cobweb", verbs: [["brush", "#41"]] },
+    ]);
+    renderTab();
+    fireEvent.click(within(things()).getByRole("option", { name: "a draught" }));
+    screen.getByRole("button", { name: "Feel a draught" }).focus();
+    act(() => useItemsStore.getState().removeItem("room", { id: "#40", name: "a draught" }));
+    await vi.waitFor(() => expect(things()).toHaveFocus());
+    await vi.waitFor(() => expect(useItemsStore.getState().selected?.id).toBe("#41"));
+    expect(screen.getByRole("button", { name: "Brush a cobweb" })).toBeTruthy();
+    expect(client.sendCommand).not.toHaveBeenCalled();
+  });
+
   it("updates rows quietly when a body moves: no focus change, nothing announced, the selection kept", () => {
     enterSalon();
     renderTab();

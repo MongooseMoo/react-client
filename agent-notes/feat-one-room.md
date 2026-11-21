@@ -69,7 +69,10 @@ Not run here (CI runs them): the whole unit suite, the Playwright specs in
 spec I only checked, with a script and no browser, that its esbuild step still
 bundles. Nobody has looked at the 3D outline or the Plan frame on a screen.
 
-Still to do: `docs/room-layout.md`, `docs/keystrokes.md`.
+- Docs: `docs/room-layout.md` has a new section "The Room tab: one picture, one
+  list of things, one list of people, one selection", and its "Map tab" passages
+  now say Room tab. `docs/keystrokes.md` says interact mode is on the shared
+  selection (added above the bullet PR #254 edits, not in it).
 
 What the source said before this work:
 
