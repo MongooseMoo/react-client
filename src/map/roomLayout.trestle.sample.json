@@ -32,8 +32,9 @@
     "root_class"
   ],
   "fixed": false,
-  "form_boxes": [
+  "form_parts": [
     {
+      "shape": "box",
       "basis": [
         [1, 0, 0],
         [0, 1, 0],
@@ -45,6 +46,7 @@
       "size": [1.4, 0.7, 0.06]
     },
     {
+      "shape": "box",
       "basis": [
         [1, 0, 0],
         [0, 1, 0],
@@ -56,6 +58,7 @@
       "size": [0.1, 0.6, 0.72]
     },
     {
+      "shape": "box",
       "basis": [
         [1, 0, 0],
         [0, 1, 0],

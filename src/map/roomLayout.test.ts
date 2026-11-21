@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { LayoutThing, RoomLayout } from "../gmcp/Room";
+import type { LayoutFormPart, LayoutThing, RoomLayout } from "../gmcp/Room";
 import { livingRoomLayout, sampleLayout, translateLayoutThing } from "./roomLayout.fixture";
 import laundry from "./roomLayout.sample-1770.json";
 import livingSample from "./roomLayout.sample-25828.json";
@@ -10,6 +10,8 @@ import {
   labelOrder,
   mainMaterial,
   nearestWall,
+  partFootprints,
+  posedPart,
   personLabel,
   thingForm,
   thingKind,
@@ -45,6 +47,51 @@ describe("room layout geometry", () => {
     expect(Math.max(...hull.map(p => p[0]))).toBeCloseTo(1 + 1.5 * Math.SQRT1_2);
     if (!thing.pose) throw new Error("missing native pose");
     expect(bodyFootprint({ ...thing, pose: { ...thing.pose, box: false } })).toBeUndefined();
+  });
+  it("sees each form part from above: an upright round part as its widest ellipse, others as their outline, highest last", () => {
+    // Turned a quarter anticlockwise, standing at (1, 2).
+    const thing: LayoutThing = { ...sampleLayout().things[0], pose: { centre_m: [1, 2, 0.5],
+      dimensions_m: [1, 1, 1], body_quaternion: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], box: true }, form_parts: [
+      { shape: "box", center: [0, 0, 0.45], size: [1, 0.6, 0.1] },
+      { shape: "lathe", center: [0.3, 0, 0], size: [0.2, 0.1, 0.8], profile: [[0.4, 0], [0.8, 0.5], [0.2, 1]] },
+      { shape: "cylinder", center: [-0.3, 0, -0.1], size: [0.1, 0.1, 0.6], basis: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]] },
+    ] };
+    const [lying, vase, top] = partFootprints(thing);
+    expect(top.part.shape).toBe("box");
+    expect(top.footprint.type).toBe("polygon");
+    if (top.footprint.type !== "polygon") throw new Error("box seen as an ellipse");
+    // The 1 x 0.6 m top, turned: 0.6 m east-west and 1 m north-south about (1, 2).
+    expect(Math.max(...top.footprint.points.map(([x]) => x))).toBeCloseTo(1.3);
+    expect(Math.max(...top.footprint.points.map(([, y]) => y))).toBeCloseTo(2.5);
+    // The vase stands upright: its widest ring, r 0.8 of 0.1 m by 0.05 m, its x axis turned to north.
+    expect(vase.footprint).toEqual({ type: "ellipse", cx: expect.closeTo(1), cy: expect.closeTo(2.3), rx: expect.closeTo(0.08),
+      ry: expect.closeTo(0.04), angle: expect.closeTo(Math.PI / 2) });
+    // The cylinder lies along the host's x (north once turned): an outline 0.6 m long and 0.1 m wide.
+    expect(lying.footprint.type).toBe("polygon");
+    if (lying.footprint.type !== "polygon") throw new Error("lying cylinder seen as an ellipse");
+    const ys = lying.footprint.points.map(([, y]) => y), xs = lying.footprint.points.map(([x]) => x);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(0.6);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(0.1, 2);
+    expect(partFootprints({ ...thing, form_parts: undefined })).toEqual([]);
+  });
+  it("poses a jointed part from its rest pose: a hinge turns it about its pivot, a slide moves it along its axis", () => {
+    // A door leaf 0.8 m wide from x 0 to 0.8, hinged on its west edge, opened a quarter turn anticlockwise.
+    const leaf: LayoutFormPart = { shape: "box", center: [0.4, 0, 1], size: [0.8, 0.04, 2],
+      joint: { type: "hinge", axis: [0, 0, 1], origin: [0, 0, 0], range: [0, Math.PI / 2], position: Math.PI / 2 } };
+    const open = posedPart(leaf);
+    expect(open.center.map((n) => Number(n.toFixed(9)))).toEqual([0, 0.4, 1]);
+    expect(open.basis[0].map((n) => Number(n.toFixed(9)))).toEqual([0, 1, 0]);
+    expect(open.basis[2]).toEqual([0, 0, 1]);
+    expect(posedPart(leaf, 0)).toEqual({ center: [0.4, 0, 1], basis: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] });
+    const drawer: LayoutFormPart = { shape: "box", center: [0, 0, 0.5], size: [0.4, 0.5, 0.15],
+      joint: { type: "slide", axis: [0, -1, 0], range: [0, 0.35], position: 0.3 } };
+    expect(posedPart(drawer).center).toEqual([0, -0.3, 0.5]);
+    // The Plan draws it pulled out.
+    const desk: LayoutThing = { ...sampleLayout().things[0], pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1],
+      body_quaternion: [1, 0, 0, 0], box: true }, form_parts: [drawer] };
+    const [{ footprint }] = partFootprints(desk);
+    if (footprint.type !== "polygon") throw new Error("drawer seen as an ellipse");
+    expect(Math.min(...footprint.points.map(([, y]) => y))).toBeCloseTo(-0.55);
   });
   it("uses the supplied world shapes without an acoustic position", () => {
     const layout = laundry as unknown as RoomLayout;

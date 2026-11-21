@@ -17,7 +17,10 @@ import {
 } from "../map/roomLayout";
 import {
   FigureCache,
+  animateJoints,
   buildRoomScene,
+  jointPositions,
+  jointSwingMs,
   updateRoomBodies,
   type CameraMode,
   type CameraPose,
@@ -107,6 +110,8 @@ interface Stage {
   controls: OrbitControls;
   scene: THREE.Scene;
   room: RoomScene | null;
+  /** Stops the jointed parts' swing or slide where it is. */
+  stopJoints: () => void;
   layout: RoomLayout | null;
   placed: PlacedThing[];
   /** People's figure geometries, reused while their look is unchanged. */
@@ -189,6 +194,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       controls,
       scene,
       room: null,
+      stopJoints: () => {},
       layout: null,
       placed: [],
       figures: new FigureCache(),
@@ -233,6 +239,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       observer?.disconnect();
       controls.removeEventListener("change", stage.render);
       controls.dispose();
+      stage.stopJoints();
       if (stage.selection) disposeSelectionOutline(stage.selection);
       if (stage.room) disposeRoomScene(stage.room);
       stage.figures.dispose();
@@ -323,6 +330,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     for (const object of stage.labelObjects.values()) object.removeFromParent();
     stage.labelObjects.clear();
 
+    // A door or drawer that moved swings or slides there from where it was drawn, unless motion is reduced.
+    stage.stopJoints();
+    const drawnJoints = previous ? jointPositions(previous) : new Map<string, number>();
     const room = buildRoomScene({ layout, placed, youId, figures: stage.figures });
     stage.room = room;
     stage.layout = layout;
@@ -336,7 +346,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     const plan = [
       ...ordered.filter((p) => isPerson(p.thing)).map((p) => ({ id: p.thing.id, text: shortLabel(displayName(p.thing, youId)), person: true })),
       ...ordered.filter((p) => !isPerson(p.thing)).map(({ thing }) => {
-        const visible = thing.form_boxes?.flatMap(({ fitting }) => fitting?.opened ? fitting.contents : []) ?? [];
+        const visible = thing.form_parts?.flatMap(({ fitting }) => fitting?.opened ? fitting.contents : []) ?? [];
         const name = shortLabel(displayName(thing, youId));
         const text = visible.length ? `${name} · ${shortLabel(visible[0].name)}${visible.length > 1 ? ` (+${visible.length - 1})` : ""}` : name;
         return { id: thing.id, text, person: false };
@@ -365,6 +375,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       stage.labelObjects.set(id, object);
     }
     showSelection(stage, selectedIdRef.current);
+    // Set before the first frame, so a moving part is first drawn where it was.
+    stage.stopJoints = animateJoints(room, drawnJoints, stage.render,
+      jointSwingMs(typeof window.matchMedia === "function" ? (query) => window.matchMedia(query) : undefined));
     stage.render();
     // Free the previous room only once the new one is drawn. three.js shares a
     // compiled shader between materials alike and deletes it when the last one is

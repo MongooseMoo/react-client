@@ -13,6 +13,7 @@ import {
   frontDirection,
   bodyDirection,
   bodyFootprint,
+  partFootprints,
   semanticDetails,
   type PlacedThing,
   placeLabels,
@@ -515,6 +516,8 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
       <g>
         {ordered.map((p) => {
           const body = bodyFootprint(p.thing);
+          // A thing built of parts is drawn as its parts seen from above, not as one box with symbols.
+          const parts = partFootprints(p.thing);
           const you = p.thing.id === youId;
           const className = [
             "rl-item",
@@ -552,7 +555,11 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
           return (
             <g key={p.thing.id} className={className} data-id={p.thing.id} data-form={thingForm(p.thing)} onClick={selectClick(p.thing.id)}>
               <title>{[displayName(p.thing, youId), ...semanticDetails(p.thing)].join(", ")}</title>
-              {body ? <polygon className="rl-thing" points={body.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} /> : p.footprints.map((f, index) => {
+              {parts.length ? parts.map(({ footprint: f }, index) => {
+                if (f.type === "polygon") return <polygon key={index} className="rl-thing" points={f.points.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} />;
+                const [x, y] = toSvg(f.cx, f.cy);
+                return <ellipse key={index} className="rl-thing" cx={x} cy={y} rx={f.rx} ry={f.ry} transform={`rotate(${(-f.angle * 180) / Math.PI} ${x} ${y})`} />;
+              }) : body ? <polygon className="rl-thing" points={body.map(([x, y]) => toSvg(x, y).join(",")).join(" ")} /> : p.footprints.map((f, index) => {
                 if (f.type === "circle") {
                   const [x, y] = toSvg(f.cx, f.cy);
                   return <circle key={index} className="rl-thing" cx={x} cy={y} r={f.r} />;
@@ -569,7 +576,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
                   />
                 );
               })}
-              {formSymbol(p, layout.size)}
+              {!parts.length && formSymbol(p, layout.size)}
             </g>
           );
         })}

@@ -112,7 +112,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   }, [pressRequests, selectedId]);
   const handleInspect = useCallback((id: string, lifetime: string, role: string) => press(id, inspectKey(id, lifetime, role)), [press]);
   const handleFitting = useCallback((lifetime: string) => {
-    const host = layout?.things.find((thing) => thing.form_boxes?.some((box) => box.fitting?.lifetime === lifetime));
+    const host = layout?.things.find((thing) => thing.form_parts?.some((part) => part.fitting?.lifetime === lifetime));
     press(host?.id, fittingKey(lifetime));
   }, [layout, press]);
 

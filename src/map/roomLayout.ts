@@ -1,4 +1,4 @@
-import type { LayoutExit, LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
+import type { LayoutExit, LayoutFormPart, LayoutShape, LayoutThing, LayoutVector, RoomLayout } from "../gmcp/Room";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { appearanceLabel } from "../avatar/figure";
 import { isLayoutPose } from "../gmcp/Room";
@@ -58,6 +58,114 @@ export function bodyFootprint(thing: LayoutThing): Array<[number, number]> | und
     const rotated = bodyDirection(thing, [x * pose.dimensions_m[0], y * pose.dimensions_m[1], z * pose.dimensions_m[2]]);
     if (rotated) points.push([pose.centre_m[0] + rotated[0], pose.centre_m[1] + rotated[1]]);
   }
+  return convexHull(points);
+}
+
+/**
+ * A round part's outline from bottom to top as `[rx, ry, z]` in its unit box: rx and ry the radius as a fraction of
+ * the half-extent across basis 1 and 2, z from -0.5 (bottom) to 0.5 (top), closed on the axis at a solid end.
+ * A hollow open part (cylinder, cone, lathe with `wall`) goes up its outside, across its rim and back down its
+ * cavity. Undefined for a box.
+ */
+export function partProfile(part: LayoutFormPart): Array<[number, number, number]> | undefined {
+  const [a, b, c] = part.size;
+  const quarter = (from: number, steps = 8) => Array.from({ length: steps + 1 }, (_, i) => from + (Math.PI / 2) * (i / steps));
+  switch (part.shape) {
+    case "box":
+      return undefined;
+    case "sphere":
+      return [...quarter(-Math.PI / 2), ...quarter(0).slice(1)].map((t) => [Math.cos(t), Math.cos(t), Math.sin(t) / 2]);
+    case "capsule": {
+      // Each end cap is half an ellipsoid min(a, b)/2 high.
+      const cap = Math.min(0.5, Math.min(a, b) / 2 / c);
+      const bottom = quarter(0).map((t): [number, number, number] => [Math.sin(t), Math.sin(t), -0.5 + cap * (1 - Math.cos(t))]);
+      return [...bottom, ...bottom.map(([r, , z]): [number, number, number] => [r, r, -z]).reverse()];
+    }
+  }
+  // Cylinder, cone and lathe: the outside from bottom to top, r and the height fraction from the bottom.
+  const side: Array<[number, number]> = part.shape === "cylinder" ? [[1, 0], [1, 1]]
+    : part.shape === "cone" ? [[1, 0], [part.top ?? 0, 1]]
+    : part.profile && part.profile[0][1] > part.profile[part.profile.length - 1][1] ? [...part.profile].reverse() : [...(part.profile ?? [])];
+  const outside = side.map(([r, z]): [number, number, number] => [r, r, z - 0.5]);
+  const bottom: Array<[number, number, number]> = side[0][0] > 0 ? [[0, 0, side[0][1] - 0.5]] : [];
+  if (!part.wall) {
+    const last = side[side.length - 1];
+    return [...bottom, ...outside, ...(last[0] > 0 ? [[0, 0, last[1] - 0.5] as [number, number, number]] : [])];
+  }
+  // The cavity is the same shape [a - 2wx, b - 2wy, c - wz], raised wz/2: its floor is wz above the bottom.
+  const [wx, wy, wz] = part.wall;
+  const fx = (a - 2 * wx) / a, fy = (b - 2 * wy) / b, floor = wz / c;
+  const cavity = side.map(([r, z]): [number, number, number] => [r * fx, r * fy, floor + z * (1 - floor) - 0.5]).reverse();
+  const cavityBottom = cavity[cavity.length - 1];
+  return [...bottom, ...outside, ...cavity, ...(cavityBottom[0] > 0 ? [[0, 0, cavityBottom[2]] as [number, number, number]] : [])];
+}
+
+/**
+ * A part's centre and basis columns in the host frame with its joint at `position` (the joint's own unless given):
+ * a hinge turns the rest pose `position` radians about its axis through its origin, right-handed; a slide moves it
+ * `position` metres along its axis. A part without a joint is at its rest pose.
+ */
+export function posedPart(part: LayoutFormPart, position = part.joint?.position ?? 0): { center: LayoutVector; basis: [LayoutVector, LayoutVector, LayoutVector] } {
+  const basis = part.basis ?? [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const joint = part.joint;
+  if (!joint) return { center: part.center, basis };
+  const k = joint.axis;
+  if (joint.type === "slide") return { center: add(part.center, [k[0] * position, k[1] * position, k[2] * position]), basis };
+  const cos = Math.cos(position), sin = Math.sin(position);
+  const turn = ([x, y, z]: LayoutVector): LayoutVector => {
+    const along = (k[0] * x + k[1] * y + k[2] * z) * (1 - cos);
+    return [
+      x * cos + (k[1] * z - k[2] * y) * sin + k[0] * along,
+      y * cos + (k[2] * x - k[0] * z) * sin + k[1] * along,
+      z * cos + (k[0] * y - k[1] * x) * sin + k[2] * along,
+    ];
+  };
+  const origin = joint.origin ?? [0, 0, 0];
+  const arm = turn([part.center[0] - origin[0], part.center[1] - origin[1], part.center[2] - origin[2]]);
+  return { center: add(origin, arm), basis: [turn(basis[0]), turn(basis[1]), turn(basis[2])] };
+}
+
+/** A part seen from above in the room frame: an ellipse when it is round and stands upright, else its outline. */
+export type PartFootprint =
+  | { type: "ellipse"; cx: number; cy: number; rx: number; ry: number; /** Radians anticlockwise from east. */ angle: number }
+  | { type: "polygon"; points: Array<[number, number]> };
+
+/**
+ * Each of a posed thing's form parts seen from above where its joint has it now, lowest top first so higher parts
+ * are drawn over lower ones.
+ */
+export function partFootprints(thing: LayoutThing): Array<{ part: LayoutFormPart; footprint: PartFootprint }> {
+  const pose = thing.pose;
+  if (!isLayoutPose(pose) || !thing.form_parts?.length) return [];
+  const rotate = (v: LayoutVector) => bodyDirection(thing, v) as LayoutVector;
+  const drawn = thing.form_parts.map((part) => {
+    const posed = posedPart(part);
+    const [e1, e2, e3] = posed.basis.map(rotate);
+    const centre = add(pose.centre_m, rotate(posed.center));
+    const world = ([u, v, w]: LayoutVector): LayoutVector => [0, 1, 2].map((i) =>
+      centre[i] + e1[i] * u * part.size[0] + e2[i] * v * part.size[1] + e3[i] * w * part.size[2]) as LayoutVector;
+    const profile = partProfile(part);
+    const samples: LayoutVector[] = profile
+      ? profile.flatMap(([rx, ry, z]) => Array.from({ length: 32 }, (_, i): LayoutVector =>
+        [(rx / 2) * Math.cos((i * Math.PI) / 16), (ry / 2) * Math.sin((i * Math.PI) / 16), z]))
+      : [-0.5, 0.5].flatMap((u) => [-0.5, 0.5].flatMap((v) => [-0.5, 0.5].map((w): LayoutVector => [u, v, w])));
+    const points = samples.map(world);
+    const top = Math.max(...points.map((p) => p[2]));
+    const upright = Math.abs(Math.abs(e3[2]) - 1) < 1e-6 && Math.abs(e1[0] * e2[0] + e1[1] * e2[1]) < 1e-6;
+    if (profile && upright) {
+      const widest = Math.max(...profile.map(([r]) => r));
+      const footprint: PartFootprint = { type: "ellipse", cx: centre[0], cy: centre[1],
+        rx: (widest * part.size[0]) / 2, ry: (widest * part.size[1]) / 2, angle: Math.atan2(e1[1], e1[0]) };
+      return { part, footprint, top };
+    }
+    return { part, footprint: { type: "polygon", points: convexHull(points.map(([x, y]): [number, number] => [x, y])) } as PartFootprint, top };
+  });
+  return drawn.sort((p, q) => p.top - q.top).map(({ part, footprint }) => ({ part, footprint }));
+}
+
+/** The convex outline round `points`, anticlockwise. */
+function convexHull(input: Array<[number, number]>): Array<[number, number]> {
+  const points = [...input];
   points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (a: number[], b: number[], c: number[]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
   const half = (ordered: Array<[number, number]>) => {

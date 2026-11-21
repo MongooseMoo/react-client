@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
 import { type Footprint, figureParams } from "../avatar/figure";
-import { isLayoutPose, type LayoutPose, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
 import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
 export { FigureCache };
@@ -11,11 +12,145 @@ import {
   exitWall,
   isPerson,
   mainMaterial,
+  partProfile,
+  posedPart,
   type PlacedThing,
   scaleBarLength,
   thingForm,
   type Wall,
 } from "./roomLayout";
+
+/** Steps round a round part. */
+const PART_SEGMENTS = 32;
+/** A turn in a round part's outline sharper than this is drawn as an edge, not shaded round. */
+const CREASE = Math.cos((40 * Math.PI) / 180);
+
+/**
+ * A form part's surface in its unit box (-0.5 to 0.5 on each axis, its axis along z), for the mesh's
+ * basis-and-size matrix to stretch into place: a box, an open box with floor and four walls, or a round part's
+ * outline (`partProfile`) revolved about z.
+ */
+export function partGeometry(part: LayoutFormPart): THREE.BufferGeometry {
+  const profile = partProfile(part);
+  if (profile) return revolve(profile);
+  if (!part.wall) return new THREE.BoxGeometry(1, 1, 1);
+  const tx = part.wall[0] / part.size[0], ty = part.wall[1] / part.size[1], tz = part.wall[2] / part.size[2];
+  const slabs = ([
+    [-0.5, 0.5, -0.5, 0.5, -0.5, -0.5 + tz],
+    [-0.5, -0.5 + tx, -0.5, 0.5, -0.5 + tz, 0.5],
+    [0.5 - tx, 0.5, -0.5, 0.5, -0.5 + tz, 0.5],
+    [-0.5 + tx, 0.5 - tx, -0.5, -0.5 + ty, -0.5 + tz, 0.5],
+    [-0.5 + tx, 0.5 - tx, 0.5 - ty, 0.5, -0.5 + tz, 0.5],
+  ] as const).filter(([x0, x1, y0, y1, z0, z1]) => x1 > x0 && y1 > y0 && z1 > z0)
+    .map(([x0, x1, y0, y1, z0, z1]) => new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2));
+  const open = mergeGeometries(slabs);
+  for (const slab of slabs) slab.dispose();
+  return open;
+}
+
+/**
+ * Puts a part's mesh where its joint has it at `position` (the joint's own unless given), in its host's frame.
+ * The matrix is set whole: nested rotations and unequal scales can produce non-orthogonal edges.
+ */
+function placePart(mesh: THREE.Mesh, part: LayoutFormPart, position = part.joint?.position ?? 0): void {
+  const { center, basis } = posedPart(part, position);
+  mesh.matrix.makeBasis(new THREE.Vector3(...basis[0]), new THREE.Vector3(...basis[1]), new THREE.Vector3(...basis[2]))
+    .scale(new THREE.Vector3(...part.size)).setPosition(...center);
+  mesh.userData.jointAt = position;
+}
+
+/** How long a jointed part takes to swing or slide to its new position, milliseconds. */
+export const JOINT_ANIMATION_MS = 250;
+
+/** How long a moved part swings for: none when the system asks for reduced motion, else JOINT_ANIMATION_MS. */
+export function jointSwingMs(matchMedia: ((query: string) => { matches: boolean }) | undefined): number {
+  return matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : JOINT_ANIMATION_MS;
+}
+
+/** Each jointed part's drawn position, by thing and role (or drawer), so a rebuilt scene can move on from it. */
+export function jointPositions(room: RoomScene): Map<string, number> {
+  const at = new Map<string, number>();
+  room.root.traverse((object) => {
+    if (object.userData.joint) at.set(object.userData.joint.key, object.userData.jointAt);
+  });
+  return at;
+}
+
+/**
+ * Swings or slides each jointed part of `room` from where it was drawn before (`before`, from `jointPositions`)
+ * to its position now over `duration` ms, calling `render` each frame. Returns a function that stops it there.
+ * Parts that were not drawn before, or have not moved, stay put; a zero duration moves nothing.
+ */
+export function animateJoints(
+  room: RoomScene,
+  before: Map<string, number>,
+  render: () => void,
+  duration = JOINT_ANIMATION_MS,
+  frame: (step: (time: number) => void) => number = requestAnimationFrame,
+  cancel: (id: number) => void = cancelAnimationFrame,
+): () => void {
+  const moving: Array<{ mesh: THREE.Mesh; part: LayoutFormPart; from: number; to: number }> = [];
+  room.root.traverse((object) => {
+    const joint = object.userData.joint as { key: string; part: LayoutFormPart } | undefined;
+    const from = joint && before.get(joint.key);
+    if (!joint || from === undefined || duration <= 0 || !(object instanceof THREE.Mesh)) return;
+    const to = joint.part.joint?.position ?? 0;
+    if (from !== to) moving.push({ mesh: object, part: joint.part, from, to });
+  });
+  if (!moving.length) return () => {};
+  let start: number | undefined;
+  let id = 0;
+  const step = (time: number) => {
+    start ??= time;
+    const t = Math.min(1, (time - start) / duration);
+    // Eased in and out.
+    const eased = t * t * (3 - 2 * t);
+    for (const { mesh, part, from, to } of moving) {
+      placePart(mesh, part, from + (to - from) * eased);
+      mesh.updateMatrixWorld(true);
+    }
+    render();
+    if (t < 1) id = frame(step);
+  };
+  for (const { mesh, part, from } of moving) {
+    placePart(mesh, part, from);
+    mesh.updateMatrixWorld(true);
+  }
+  id = frame(step);
+  return () => cancel(id);
+}
+
+/** `[rx, ry, z]` points revolved about z, with an elliptic cross-section where rx and ry differ. */
+function revolve(profile: Array<[number, number, number]>): THREE.BufferGeometry {
+  // A sharp turn keeps an edge: its point is repeated so each side gets its own normal.
+  const path: Array<[number, number, number]> = [];
+  profile.forEach((point, i) => {
+    path.push(point);
+    const before = profile[i - 1], after = profile[i + 1];
+    if (!before || !after) return;
+    const a = [point[0] - before[0], point[2] - before[2]], b = [after[0] - point[0], after[2] - point[2]];
+    const la = Math.hypot(a[0], a[1]), lb = Math.hypot(b[0], b[1]);
+    if (la > 0 && lb > 0 && (a[0] * b[0] + a[1] * b[1]) / (la * lb) < CREASE) path.push(point);
+  });
+  // LatheGeometry turns about y; a quarter turn about x puts that axis on z with the height kept.
+  const geometry = new THREE.LatheGeometry(path.map(([r, , z]) => new THREE.Vector2(r / 2, z)), PART_SEGMENTS).rotateX(Math.PI / 2);
+  const position = geometry.getAttribute("position");
+  for (let k = 0; k < position.count; k++) {
+    const [rx, ry] = path[k % path.length];
+    if (rx > 0) position.setY(k, (position.getY(k) * ry) / rx);
+  }
+  geometry.computeVertexNormals();
+  // The first and last rings of the turn are the same points: shade them alike so no seam shows.
+  const normal = geometry.getAttribute("normal");
+  const seam = new THREE.Vector3(), other = new THREE.Vector3();
+  for (let j = 0; j < path.length; j++) {
+    const last = PART_SEGMENTS * path.length + j;
+    seam.fromBufferAttribute(normal, j).add(other.fromBufferAttribute(normal, last)).normalize();
+    normal.setXYZ(j, seam.x, seam.y, seam.z);
+    normal.setXYZ(last, seam.x, seam.y, seam.z);
+  }
+  return geometry;
+}
 
 /**
  * The Room.Layout room as a three.js scene, built from `placeThings` output.
@@ -446,24 +581,23 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
     } else {
       group.userData.form = thingForm(p.thing);
       const pose = p.thing.pose;
-      if (isLayoutPose(pose) && (pose.box || p.thing.form_boxes?.length)) {
+      if (isLayoutPose(pose) && (pose.box || p.thing.form_parts?.length)) {
         const [w, d, h] = pose.dimensions_m;
         const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
-        if (p.thing.form_boxes?.length) {
+        if (p.thing.form_parts?.length) {
           const surface = thingColour(p.thing);
           const wood = builder.material(surface);
           const face = builder.material(new THREE.Color(surface).multiplyScalar(0.78).getHex());
-          for (const { center: [x, y, z], size: [w, d, h], basis, role, fitting, colour } of p.thing.form_boxes) {
+          for (const part of p.thing.form_parts) {
+            const { role, fitting, colour } = part;
             const hex = colourHex(colour);
             const material = hex ? builder.material(hexToNumber(hex)) : fitting ? face : wood;
-            const mesh = builder.box({
-              x0: -0.5, x1: 0.5, y0: -0.5, y1: 0.5, z0: -0.5, z1: 0.5,
-            }, material, fitting?.name ?? role ?? "form");
-            mesh.position.set(x, y, z);
-            // Nested rotations and unequal scales can produce non-orthogonal edges.
-            if (basis) mesh.matrix.makeBasis(new THREE.Vector3(...basis[0]), new THREE.Vector3(...basis[1]), new THREE.Vector3(...basis[2]));
-            mesh.matrix.scale(new THREE.Vector3(w, d, h)).setPosition(mesh.position);
+            const mesh = new THREE.Mesh(partGeometry(part), material);
+            mesh.userData.part = fitting?.name ?? role ?? "form";
             mesh.matrixAutoUpdate = false;
+            placePart(mesh, part);
+            const key = role ?? fitting?.lifetime;
+            if (part.joint && key) mesh.userData.joint = { key: JSON.stringify([p.thing.id, key]), part };
             if (fitting) mesh.userData.fitting = fitting.lifetime;
             if (role && p.thing.lifetime) mesh.userData.inspect = [p.thing.id, p.thing.lifetime, role];
             group.add(mesh);
@@ -561,7 +695,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
       !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
       a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
-      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state || old.thing.form_boxes !== next.thing.form_boxes ||
+      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
       JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
     const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(

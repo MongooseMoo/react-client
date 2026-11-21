@@ -337,7 +337,7 @@ describe("RoomInfoDisplay", () => {
   it("inspects the selected thing's parts, even when labels repeat, and drops replaced parts", () => {
     const layout = salon();
     const host = { ...layout.things[0], id: "#5678", lifetime: "camera-life",
-      form_boxes: ["front/screen", "back/screen"].map((role) => ({ role, label: "screen", center: [0, 0, 0], size: [1, 1, 1] })) } as LayoutThing;
+      form_parts: ["front/screen", "back/screen"].map((role) => ({ role, label: "screen", shape: "box", center: [0, 0, 0], size: [1, 1, 1] })) } as LayoutThing;
     layout.things[0] = host;
     enterSalon(layout);
     renderTab();
@@ -346,7 +346,7 @@ describe("RoomInfoDisplay", () => {
     fireEvent.click(screen.getByRole("button", { name: "Inspect screen (back/screen)" }));
     expect(client.sendCommand).toHaveBeenCalledWith("look back/screen on #5678");
     act(() => useRoomStore.getState().setRoomLayout({ ...layout, things: layout.things.map((item) =>
-      item === host ? { ...host, form_boxes: [{ ...host.form_boxes![0], role: "viewfinder", label: "viewfinder" }] } : item) }));
+      item === host ? { ...host, form_parts: [{ ...host.form_parts![0], role: "viewfinder", label: "viewfinder" }] } : item) }));
     expect(screen.queryByRole("button", { name: /inspect screen/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Inspect viewfinder" }));
     expect(client.sendCommand).toHaveBeenLastCalledWith("look viewfinder on #5678");
@@ -355,7 +355,7 @@ describe("RoomInfoDisplay", () => {
   it("keeps the focused drawer and its native commands across a change observed from text", () => {
     const layout = salon();
     const fitting = { id: "#44469", lifetime: "drawer-life", name: "upper-left drawer", opened: false, command: "open #44469", contents: [] };
-    const desk = { ...layout.things[0], lifetime: "desk-life", form_boxes: [{ center: [-0.5, 0, 0.175], size: [0.3, 0.6, 0.15], fitting }] } as LayoutThing;
+    const desk = { ...layout.things[0], lifetime: "desk-life", form_parts: [{ shape: "box", center: [-0.5, 0, 0.175], size: [0.3, 0.6, 0.15], fitting }] } as LayoutThing;
     layout.things[0] = desk;
     enterSalon(layout);
     renderTab();
@@ -369,7 +369,7 @@ describe("RoomInfoDisplay", () => {
     const item = { id: "#50", lifetime: "letter-life", name: "letter", command: "get #50 from #44469" };
     const show = (opened: boolean) => act(() => useRoomStore.getState().setRoomLayout({ ...layout,
       things: layout.things.map((thing) => thing !== desk ? thing : { ...desk,
-        form_boxes: [{ ...desk.form_boxes![0], fitting: { ...fitting, opened,
+        form_parts: [{ ...desk.form_parts![0], fitting: { ...fitting, opened,
           command: opened ? "close #44469" : "open #44469", contents: opened ? [item] : [] } }] }),
     }));
     show(true);
@@ -387,9 +387,9 @@ describe("RoomInfoDisplay", () => {
   it("a part or drawer clicked in a 3D view selects its thing and presses the same button", async () => {
     const layout = salon();
     const fitting = { id: "#44469", lifetime: "drawer-life", name: "upper-left drawer", opened: false, command: "open #44469", contents: [] };
-    layout.things[0] = { ...layout.things[0], lifetime: "desk-life", form_boxes: [
-      { role: "writing-slab", label: "slab", center: [0, 0, 0.3], size: [1, 0.6, 0.05] },
-      { center: [-0.5, 0, 0.175], size: [0.3, 0.6, 0.15], fitting },
+    layout.things[0] = { ...layout.things[0], lifetime: "desk-life", form_parts: [
+      { role: "writing-slab", label: "slab", shape: "box", center: [0, 0, 0.3], size: [1, 0.6, 0.05] },
+      { shape: "box", center: [-0.5, 0, 0.175], size: [0.3, 0.6, 0.15], fitting },
     ] } as LayoutThing;
     enterSalon(layout);
     renderTab();
