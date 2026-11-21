@@ -1,22 +1,14 @@
 import type React from "react";
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { downloadFile } from "../downloadFile";
 import type { RoomLayout } from "../gmcp/Room";
-import {
-  describeExit,
-  describeThing,
-  describeUnshaped,
-  displayName,
-  isPerson,
-  layoutSummary,
-  metres,
-  placeThings,
-} from "../map/roomLayout";
+import { describeExit, layoutSummary, metres, placeThings } from "../map/roomLayout";
+import { useItemsStore } from "../stores/itemsStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { type LocalStorageSchema, loadStoredValue, saveStoredValue } from "../persistence";
 import RoomLayoutPicture, { standaloneSvg } from "./RoomLayoutPicture";
-import AvatarPortrait from "../avatar/portrait";
+import "./RoomLayoutView.css";
 
 /** three.js and the 3D views load only when one of them is chosen. */
 const RoomLayout3D = lazy(() => import("./RoomLayout3D"));
@@ -27,17 +19,17 @@ const VIEWS: Array<{ value: RoomLayoutViewName; label: string; help: string }> =
   {
     value: "plan",
     label: "Plan",
-    help: "Zoom with the wheel, a pinch, or + and - on the picture; arrows pan; 0 shows the whole room.",
+    help: "Zoom with the wheel, a pinch, or + and - on the picture; arrows pan; 0 shows the whole room. Click a thing or person to select it.",
   },
   {
     value: "dollhouse",
     label: "Dollhouse",
-    help: "Drag to turn the room, the wheel or a pinch to zoom; on the picture arrows turn it, + and - zoom, 0 shows the whole room.",
+    help: "Drag to turn the room, the wheel or a pinch to zoom; on the picture arrows turn it, + and - zoom, 0 shows the whole room. Click a thing or person to select it.",
   },
   {
     value: "eyes",
     label: "Your eyes",
-    help: "The room from where you stand, facing where you face; it turns as you turn.",
+    help: "The room from where you stand, facing where you face; it turns as you turn. Click a thing or person to select it.",
   },
 ];
 
@@ -51,21 +43,26 @@ export const roomLayoutViewSchema: LocalStorageSchema<RoomLayoutViewName> = {
 };
 
 /**
- * The current spatial room from Room.Layout: the drawing, its controls, and
- * the same room in words (exits, people, things, each with where it is).
- * Things follow Room.LayoutUpdate body changes; nothing here is announced or takes
- * focus when they do.
+ * The current spatial room from Room.Layout: the drawing and its controls, the room's size and
+ * finishes, and its doorways in words. The Room tab lists the things and people beside it; the
+ * drawing shows the one selection (the items store's) and sets it when a thing or person is
+ * clicked. Things follow Room.LayoutUpdate body changes; nothing here is announced or takes focus
+ * when they do.
  */
 interface RoomLayoutViewProps {
   layout: RoomLayout;
   roomName: string;
   onCommand: (command: string) => void;
+  /** A part of a thing was clicked in a 3D view. */
+  onInspect: (id: string, lifetime: string, role: string) => void;
+  /** A fitted drawer's face was clicked in a 3D view. */
+  onFitting: (lifetime: string) => void;
 }
 
-const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCommand }) => {
-  const fittingButtons = useRef(new Map<string, HTMLButtonElement>());
-  const inspectButtons = useRef(new Map<string, HTMLButtonElement>());
+const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCommand, onInspect, onFitting }) => {
   const youId = useSpatialStore((state) => state.listenerEntityId);
+  const selectedId = useItemsStore((state) => state.selected?.id ?? null);
+  const select = useItemsStore((state) => state.select);
   const name = stripMudAnsiTags(roomName);
   const [view, setView] = useState<RoomLayoutViewName>(() => loadStoredValue(roomLayoutViewSchema, "plan"));
   const chooseView = (next: RoomLayoutViewName) => {
@@ -75,27 +72,6 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
 
   const placed = useMemo(() => placeThings(layout), [layout]);
   const summary = layoutSummary(name, layout);
-  // Everything is listed: a thing sent without shapes is listed but not drawn.
-  const entries = [
-    ...layout.things.map((thing) => {
-      const where = placed.find((p) => p.thing.id === thing.id);
-      return {
-        id: thing.id,
-        lifetime: thing.lifetime,
-        parts: thing.lifetime && /^#\d+$/.test(thing.id)
-          ? (thing.form_boxes ?? []).flatMap(({ role, label, fitting }) => role && label && !fitting ? [{ role, label }] : [])
-          : [],
-        kind: thing.kind,
-        appearance: thing.appearance,
-        fittings: new Map(thing.form_boxes?.flatMap(({ fitting }) => fitting ? [[fitting.lifetime, fitting] as const] : [])),
-        sortName: displayName(thing, youId),
-        text: where ? describeThing(where, layout.size, youId) : describeUnshaped(thing, youId),
-      };
-    }),
-  ];
-  const byName = (a: (typeof entries)[number], b: (typeof entries)[number]) => a.sortName.localeCompare(b.sortName);
-  const people = entries.filter((e) => isPerson(e)).sort(byName);
-  const things = entries.filter((e) => !isPerson(e)).sort(byName);
   const [w, d, h] = layout.size;
 
   const save = (svg: SVGSVGElement) => {
@@ -128,6 +104,8 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
           placed={placed}
           youId={youId}
           label={summary}
+          selectedId={selectedId}
+          onSelect={select}
           onExit={onCommand}
           onSave={save}
         />
@@ -139,17 +117,11 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
             youId={youId}
             label={summary}
             mode={view}
+            selectedId={selectedId}
+            onSelect={select}
             onExit={onCommand}
-            onInspect={(id, lifetime, role) => {
-              const button = inspectButtons.current.get(JSON.stringify([id, lifetime, role]));
-              button?.focus({ preventScroll: true });
-              button?.click();
-            }}
-            onFitting={(lifetime) => {
-              const button = fittingButtons.current.get(lifetime);
-              button?.focus({ preventScroll: true });
-              button?.click();
-            }}
+            onInspect={onInspect}
+            onFitting={onFitting}
           />
         </Suspense>
       )}
@@ -172,73 +144,6 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
         <ul aria-label="Exits in the layout">
           {layout.exits.map((exit, index) => (
             <li key={`${exit.name}-${index}`}>{describeExit(exit, layout.size)}</li>
-          ))}
-        </ul>
-      )}
-      <h6>People</h6>
-      {people.length === 0 ? (
-        <p>No one.</p>
-      ) : (
-        <ul aria-label="People in the layout">
-          {people.map((e) => (
-            <li key={e.id}>
-              <AvatarPortrait appearance={e.appearance} size={32} className="room-layout-portrait" />
-              {e.text}
-            </li>
-          ))}
-        </ul>
-      )}
-      <h6>Things</h6>
-      {things.length === 0 ? (
-        <p>Nothing.</p>
-      ) : (
-        <ul aria-label="Things in the layout">
-          {things.map((e) => (
-            <li key={e.id}>
-              {e.text}
-              {e.parts.length > 0 && (
-                <ul aria-label={`Parts of ${e.sortName}`}>
-                  {e.parts.map(({ role, label }) => {
-                    const key = JSON.stringify([e.id, e.lifetime, role]);
-                    const ambiguous = e.parts.some((part) => part.label === label && part.role !== role);
-                    return <li key={key}><button type="button" ref={(node) => {
-                      if (node) inspectButtons.current.set(key, node);
-                      else inspectButtons.current.delete(key);
-                    }} onClick={() => onCommand(`look ${role} on ${e.id}`)}>
-                      Inspect {label}{ambiguous && ` (${role})`}
-                    </button></li>;
-                  })}
-                </ul>
-              )}
-              {e.fittings.size > 0 && (
-                <ul aria-label={`Fittings of ${e.sortName}`}>
-                  {Array.from(e.fittings.values(), (fitting) => (
-                    <li key={fitting.lifetime}>
-                      <button type="button" aria-expanded={fitting.opened} disabled={!fitting.command}
-                        ref={(node) => {
-                          if (node) fittingButtons.current.set(fitting.lifetime, node);
-                          else fittingButtons.current.delete(fitting.lifetime);
-                        }}
-                        onClick={() => onCommand(fitting.command)}>
-                        {fitting.opened ? "Close" : "Open"} {fitting.name}
-                      </button>
-                      {fitting.opened && (fitting.contents.length ? (
-                        <ul aria-label={`Contents of ${fitting.name}`}>
-                          {fitting.contents.map((item) => (
-                            <li key={item.lifetime}>
-                              <button type="button" disabled={!item.command} onClick={() => {
-                                fittingButtons.current.get(fitting.lifetime)?.focus({ preventScroll: true });
-                                onCommand(item.command);
-                              }}>Get {item.name}</button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : " No visible contents.")}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
           ))}
         </ul>
       )}

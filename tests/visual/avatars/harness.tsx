@@ -13,7 +13,7 @@ import * as THREE from "three";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import "../../../src/tokens.css";
 import "../../../src/index.css";
-import "../../../src/components/MapPanel.css";
+import "../../../src/components/RoomLayoutView.css";
 import { LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS } from "../../../src/avatar/bodyPlans.fixture";
 import { TEST_CHARACTERS, type TestCharacter } from "../../../src/avatar/characters.fixture";
 import { figureParams } from "../../../src/avatar/figure";
@@ -357,7 +357,7 @@ if (view === "portraits") {
   const layout = params.get("set") ? crowdLayout(CHARACTERS.length, CHARACTERS) : crowdLayout(TEST_CHARACTERS.length);
   render(
     <div style={{ width: 960 }}>
-      <RoomLayoutPicture layout={layout} placed={placeThings(layout)} youId="" label="test room" onExit={noop} onSave={noop} />
+      <RoomLayoutPicture layout={layout} placed={placeThings(layout)} youId="" label="test room" selectedId={null} onSelect={noop} onExit={noop} onSave={noop} />
     </div>,
     root,
   );
@@ -595,7 +595,11 @@ if (view === "portraits") {
           youId={params.get("you") ?? ""}
           label="test room"
           mode={mode}
+          selectedId={null}
+          onSelect={noop}
           onExit={noop}
+          onInspect={noop}
+          onFitting={noop}
         />
       </div>,
       root,

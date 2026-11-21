@@ -17,6 +17,10 @@ import {
   DEFAULT_EYE_HEIGHT,
   DOLLHOUSE_FOV,
   disposeRoomScene,
+  disposeSelectionOutline,
+  pickables,
+  scenePick,
+  selectionOutline,
   dollhouseMaxDistance,
   dollhousePose,
   EYES_FOV,
@@ -62,6 +66,75 @@ const figureColours = (id: string, scene: ReturnType<typeof buildRoomScene>): nu
   for (let i = 0; i < attribute.count; i++) found.add(c.setRGB(attribute.getX(i), attribute.getY(i), attribute.getZ(i)).getHex());
   return [...found].sort((a, b) => a - b);
 };
+
+describe("picking and the selection in 3D", () => {
+  /** What a ray from `from` toward `to` picks in the scene, as a click there would. */
+  const clickAlong = (scene: ReturnType<typeof buildRoomScene>, from: [number, number, number], to: [number, number, number]) => {
+    const origin = new THREE.Vector3(...from);
+    const ray = new THREE.Raycaster(origin, new THREE.Vector3(...to).sub(origin).normalize());
+    return scenePick(ray.intersectObjects(pickables(scene), true)[0]?.object);
+  };
+
+  it("picks the thing or person a click lands on, by id", () => {
+    const scene = build(livingRoomLayout());
+    // Straight down onto the coffee table (#1, at the room's middle) and onto Person 1 (#9).
+    expect(clickAlong(scene, [0, 0, 2.4], [0, 0, 0])).toEqual({ kind: "thing", id: "#1" });
+    expect(clickAlong(scene, [-1.6, -1.4, 2.4], [-1.6, -1.4, 0])).toEqual({ kind: "thing", id: "#9" });
+    // Bare floor picks nothing.
+    expect(clickAlong(scene, [1.2, -1.5, 2.4], [1.2, -1.5, 0])).toBeUndefined();
+    disposeRoomScene(scene);
+  });
+
+  it("still picks a doorway as its exit, a drawer as its fitting and a part as its role", () => {
+    const layout = livingRoomLayout();
+    const fitting = { id: "#123", name: "drawer", lifetime: "drawer-life", command: "open #123", opened: false, contents: [] };
+    layout.things = [{ ...layout.things[0], id: "#236", lifetime: "desk-life", kind: "object",
+      pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true },
+      form_boxes: [
+        { role: "slab", label: "slab", center: [0.25, 0, 0], size: [0.5, 1, 1] },
+        { center: [-0.25, 0, 0], size: [0.5, 1, 1], fitting },
+      ] }];
+    const scene = build(layout);
+    expect(clickAlong(scene, [0.25, 0, 2.4], [0.25, 0, 0])).toEqual({ kind: "inspect", id: "#236", lifetime: "desk-life", role: "slab" });
+    expect(clickAlong(scene, [-0.25, 0, 2.4], [-0.25, 0, 0])).toEqual({ kind: "fitting", lifetime: "drawer-life" });
+    // From the room's middle out through the east doorway (at y 1, 2.4 m east).
+    expect(clickAlong(scene, [1.5, 1, 1], [3, 1, 1])).toEqual({ kind: "exit", name: "east" });
+    disposeRoomScene(scene);
+  });
+
+  it("does not pick what is not drawn: you, in your own eyes", () => {
+    const scene = build(livingRoomLayout());
+    const you = scene.things.get("#99") as THREE.Object3D;
+    expect(clickAlong(scene, [1.6, 0.4, 2.4], [1.6, 0.4, 0])).toEqual({ kind: "thing", id: "#99" });
+    you.visible = false;
+    expect(clickAlong(scene, [1.6, 0.4, 2.4], [1.6, 0.4, 0])).toBeUndefined();
+    disposeRoomScene(scene);
+  });
+
+  it("outlines the selected thing's box with dashed edges and a block at each corner, drawn over everything, never picked", () => {
+    const placed = placeThings(livingRoomLayout());
+    const table = placed.find((p) => p.thing.id === "#1") as (typeof placed)[number];
+    const outline = selectionOutline(table.bounds);
+    const size = new THREE.Box3().setFromObject(outline).getSize(new THREE.Vector3());
+    // The table is 1.2 x 0.6 x 0.45 m; the outline stands a little outside it on every side.
+    expect(size.x).toBeGreaterThan(1.2);
+    expect(size.x).toBeLessThan(1.5);
+    expect(size.z).toBeGreaterThan(0.45);
+    const lines = outline.children.find((child): child is THREE.LineSegments => child instanceof THREE.LineSegments);
+    expect(lines?.material).toBeInstanceOf(THREE.LineDashedMaterial);
+    expect(lines?.geometry.getAttribute("lineDistance")).toBeDefined();
+    expect(outline.children.filter((child) => child instanceof THREE.Mesh)).toHaveLength(8);
+    outline.traverse((object) => {
+      const material = (object as THREE.Mesh).material as THREE.Material | undefined;
+      if (material) expect(material.depthTest).toBe(false);
+    });
+    const scene = build(livingRoomLayout());
+    scene.root.add(outline);
+    expect(pickables(scene).some((object) => object === outline)).toBe(false);
+    disposeSelectionOutline(outline);
+    disposeRoomScene(scene);
+  });
+});
 
 describe("buildRoomScene", () => {
   it("paints individual form boxes with the MOO palette and falls back to the host material", () => {

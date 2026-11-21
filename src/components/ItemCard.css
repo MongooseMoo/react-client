@@ -93,3 +93,8 @@
     outline: 2px solid var(--color-focus-ring);
     outline-offset: 1px;
 }
+
+/* Where the thing is can be a long phrase: let it wrap. */
+.item-where {
+    white-space: normal;
+}

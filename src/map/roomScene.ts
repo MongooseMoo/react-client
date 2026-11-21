@@ -509,7 +509,7 @@ const MARKER_FULL_PX = 10;
 const MARKER_RADIUS_PX = 11;
 /** The ring's inner radius as a share of its outer one: a line about 1.5 px wide. */
 const MARKER_INNER = 0.86;
-/** The person label's colour (`.rl3d-label-person` in MapPanel.css); the view sets each ring to its own label's. */
+/** The person label's colour (`.rl3d-label-person` in RoomLayoutView.css); the view sets each ring to its own label's. */
 const MARKER_COLOUR = 0xe8e8ed;
 
 /** How strongly a figure `px` CSS pixels tall on screen is ringed: 1 up to MARKER_FULL_PX, fading to 0 at TINY_FIGURE_PX. */
@@ -793,6 +793,86 @@ const thingIdOf = (object: THREE.Object3D | null): string | undefined => {
   while (object && object.userData.thingId === undefined) object = object.parent;
   return object?.userData.thingId as string | undefined;
 };
+
+/** What a click in a 3D view can land on: the things and people drawn, the walls with their doorways, and the floor hatches. */
+export function pickables(scene: RoomScene): THREE.Object3D[] {
+  return [
+    ...Array.from(scene.things.values()).filter((thing) => thing.visible),
+    ...Object.values(scene.walls),
+    ...scene.exits.filter((exit) => exit.parent === scene.root),
+  ];
+}
+
+/** What a click on `object` means. */
+export type ScenePick =
+  | { kind: "fitting"; lifetime: string }
+  | { kind: "inspect"; id: string; lifetime: string; role: string }
+  | { kind: "exit"; name: string }
+  | { kind: "thing"; id: string };
+
+/**
+ * A fitted drawer's face is its drawer, an authored part is that part, a doorway is its exit;
+ * anything else drawn for a thing or person is that thing or person. A wall or nothing is nothing.
+ */
+export function scenePick(object: THREE.Object3D | null | undefined): ScenePick | undefined {
+  if (!object) return undefined;
+  if (object.userData.fitting) return { kind: "fitting", lifetime: object.userData.fitting };
+  if (object.userData.inspect) {
+    const [id, lifetime, role] = object.userData.inspect as [string, string, string];
+    return { kind: "inspect", id, lifetime, role };
+  }
+  if (object.userData.exit) return { kind: "exit", name: object.userData.exit };
+  const id = thingIdOf(object);
+  return id === undefined ? undefined : { kind: "thing", id };
+}
+
+export const SELECTION_COLOUR = 0xffffff;
+
+/**
+ * The mark round the selected thing or person: the edges of its box, a little outside it, as dashed
+ * lines, with a small block at each corner. The dashes and corner blocks mark it by shape, not by
+ * colour alone. It is drawn over everything, so nothing in front hides it, and it belongs to no
+ * thing's group, so no click lands on it. Free it with `disposeSelectionOutline`.
+ */
+export function selectionOutline(bounds: Bounds): THREE.Group {
+  const size = new THREE.Vector3(bounds.x1 - bounds.x0, bounds.y1 - bounds.y0, bounds.z1 - bounds.z0);
+  const gap = Math.min(0.08, Math.max(0.03, Math.max(size.x, size.y, size.z) * 0.04));
+  size.addScalar(gap * 2);
+  const group = new THREE.Group();
+  group.name = "selection";
+  group.position.set((bounds.x0 + bounds.x1) / 2, (bounds.y0 + bounds.y1) / 2, (bounds.z0 + bounds.z1) / 2);
+  const box = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const edges = new THREE.EdgesGeometry(box);
+  box.dispose();
+  const lines = new THREE.LineSegments(edges, new THREE.LineDashedMaterial({
+    color: SELECTION_COLOUR, dashSize: gap * 1.6, gapSize: gap, depthTest: false, transparent: true,
+  }));
+  lines.computeLineDistances();
+  lines.renderOrder = 1000;
+  group.add(lines);
+  const corner = new THREE.BoxGeometry(gap, gap, gap);
+  const solid = new THREE.MeshBasicMaterial({ color: SELECTION_COLOUR, depthTest: false, transparent: true });
+  for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+    const block = new THREE.Mesh(corner, solid);
+    block.position.set(x * size.x, y * size.y, z * size.z);
+    block.renderOrder = 1000;
+    group.add(block);
+  }
+  group.updateMatrixWorld(true);
+  return group;
+}
+
+export function disposeSelectionOutline(outline: THREE.Group): void {
+  outline.removeFromParent();
+  const freed = new Set<{ dispose: () => void }>();
+  outline.traverse((object) => {
+    if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+      freed.add(object.geometry);
+      freed.add(object.material as THREE.Material);
+    }
+  });
+  for (const resource of freed) resource.dispose();
+}
 
 /** How far (x, y) is from `box`, pixels: 0 inside it. */
 const offBox = (at: { x: number; y: number }, box: Box) => Math.hypot(Math.max(box.x0 - at.x, 0, at.x - box.x1), Math.max(box.y0 - at.y, 0, at.y - box.y1));

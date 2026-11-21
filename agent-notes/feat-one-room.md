@@ -46,8 +46,30 @@ Done and committed, each with tests passing by explicit path:
   (`AccessibleList.test.tsx`: three list tests, one inventory test; the two
   existing inventory focus tests pass unchanged).
 
-Still to do: the Room tab's joined lists and cards, the room view's move out of
-the Map tab, selection in the picture (Plan and 3D), docs, `scripts/`/`tests/`.
+- The Room tab: `RoomInfoDisplay.tsx` mounts `RoomLayoutView` (the only mount)
+  above one Things list and one People list built by the new pure function
+  `roomContents` (`src/map/roomContents.ts`, joined by id). The selected thing's
+  card shows where it is, what it is made of, the server's verbs, and its parts
+  and drawer controls (`RoomThingControls.tsx`, the JSX moved out of
+  `RoomLayoutView`). `RoomLayoutView` keeps the picture, size, finishes and the
+  doorway list; its People and Things lists are gone. `MapPanel.tsx` no longer
+  mounts it. The room view's style rules moved, unchanged, from `MapPanel.css`
+  to the new `RoomLayoutView.css` (the Map tab is loaded lazily, so its
+  stylesheet is not there for the Room tab).
+- Selection in the picture: Plan frames the selected thing with a dashed frame
+  and bolds and underlines its label; a click on a thing or person selects it;
+  a drag does not. 3D: `scenePick`, `pickables`, `selectionOutline` in
+  `roomScene.ts` (tested without WebGL); `RoomLayout3D.tsx` uses them.
+- `tests/browser/room-semantics.spec.ts` now mounts the Room tab and reads the
+  Things listbox. `tests/visual/avatars/harness.tsx` passes the new props and
+  imports `RoomLayoutView.css`.
+
+Not run here (CI runs them): the whole unit suite, the Playwright specs in
+`tests/browser`, the visual harness, `scripts/check-*.mjs`. For the browser
+spec I only checked, with a script and no browser, that its esbuild step still
+bundles. Nobody has looked at the 3D outline or the Plan frame on a screen.
+
+Still to do: `docs/room-layout.md`, `docs/keystrokes.md`.
 
 What the source said before this work:
 
