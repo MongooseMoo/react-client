@@ -10,6 +10,7 @@ const {
   mockCopyRecentOutputLine,
   mockReviewRecentOutputLine,
   mockSwitchToTab,
+  mockIndexOfTab,
 } = vi.hoisted(() => {
   const mockClient = {
     liveServer: true,
@@ -50,6 +51,8 @@ const {
     mockCopyRecentOutputLine: vi.fn(),
     mockReviewRecentOutputLine: vi.fn(),
     mockSwitchToTab: vi.fn(),
+    // Room, Map, Inventory, as the sidebar orders them when all three show.
+    mockIndexOfTab: vi.fn((id: string) => ['room-tab', 'map-tab', 'inventory-tab'].indexOf(id)),
   };
 });
 
@@ -103,12 +106,17 @@ vi.mock('./components/input', () => ({
 vi.mock('./components/output', async () => {
   const ReactModule = await vi.importActual<typeof import('react')>('react');
   return {
-    default: ReactModule.forwardRef((_props, ref) => {
+    default: ReactModule.forwardRef((props: { onShowHoldingList?: (list: 'things' | 'people' | 'inventory') => void }, ref) => {
       ReactModule.useImperativeHandle(ref, () => ({
         copyRecentOutputLine: mockCopyRecentOutputLine,
         reviewRecentOutputLine: mockReviewRecentOutputLine,
       }));
-      return <div data-testid="output" />;
+      // Stands in for a bound name in the transcript whose thing was found in that list.
+      return <div data-testid="output">
+        {(['things', 'people', 'inventory'] as const).map((list) => (
+          <button key={list} type="button" onClick={() => props.onShowHoldingList?.(list)}>Bound name in {list}</button>
+        ))}
+      </div>;
     }),
   };
 });
@@ -138,7 +146,7 @@ vi.mock('./components/sidebar', async () => {
   const { TabShownContext } = await vi.importActual<typeof import('./components/tabs')>('./components/tabs');
   return {
     default: ReactModule.forwardRef((props: { collapsed: boolean; onToggleCollapse: () => void }, ref) => {
-      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab, hasTab: () => true }));
+      ReactModule.useImperativeHandle(ref, () => ({ switchToTab: mockSwitchToTab, hasTab: () => true, indexOfTab: mockIndexOfTab }));
       // data-shown: what the app tells the sidebar about whether it is showing.
       return <button type="button" data-shown={String(ReactModule.useContext(TabShownContext))} onClick={props.onToggleCollapse}>{props.collapsed ? 'Expand' : 'Collapse'}</button>;
     }),
@@ -305,6 +313,39 @@ describe('App haptics backend lifecycle', () => {
     fireEvent.keyDown(document, { ctrlKey: true, shiftKey: true, key: '#', code: 'Digit3' });
     await waitFor(() => expect(document.querySelector('aside')).not.toHaveAttribute('hidden'));
     expect(mockSwitchToTab).toHaveBeenLastCalledWith(2);
+  });
+
+  it('shows the sidebar and lands in the list that holds a bound name\'s thing', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Command' })).toHaveFocus());
+    const aside = document.querySelector('aside') as HTMLElement;
+    // From a hidden sidebar: the Room tab's People list.
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    expect(aside).toHaveAttribute('hidden');
+    fireEvent.click(screen.getByRole('button', { name: 'Bound name in people' }));
+    await waitFor(() => expect(aside).not.toHaveAttribute('hidden'));
+    expect(mockSwitchToTab).toHaveBeenLastCalledWith(0, 'room-players-list');
+    // From a collapsed sidebar: the Room tab's Things list.
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bound name in things' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Collapse' })).toBeVisible());
+    expect(mockSwitchToTab).toHaveBeenLastCalledWith(0, 'room-contents-list');
+    // Something carried is in the Inventory tab's list.
+    fireEvent.click(screen.getByRole('button', { name: 'Bound name in inventory' }));
+    await waitFor(() => expect(mockSwitchToTab).toHaveBeenLastCalledWith(2, 'inventory-listbox'));
+    expect(mockSwitchToTab).toHaveBeenCalledTimes(3);
+    expect(mockClient.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('leaves the sidebar as it is when the tab holding the list is not offered', async () => {
+    mockIndexOfTab.mockReturnValueOnce(-1);
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Command' })).toHaveFocus());
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bound name in things' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector('aside')).toHaveAttribute('hidden');
+    expect(mockSwitchToTab).not.toHaveBeenCalled();
   });
 
   it('tells the sidebar it is not showing while the sidebar is hidden, so nothing in it keeps drawing', async () => {

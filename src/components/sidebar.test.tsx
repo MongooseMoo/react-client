@@ -55,6 +55,34 @@ it('numbers tabs by their place on screen, so a tab that arrives renumbers those
   expect(ref.current?.indexOfTab('midi-tab')).toBe(-1);
 });
 
+it('lands on a named list of a tab: the Room tab\'s Things or People list with the selection the caller made', () => {
+  useRoomStore.getState().setRoomInfo({ num: 1, name: 'Room', exits: { north: 2 } });
+  useItemsStore.getState().setLocationItems('room', [{ id: '#11', name: 'portable radio' }, { id: '#12', name: 'plate' }]);
+  useRoomStore.getState().setRoomPlayers([{ name: 'Ann', fullname: 'Ann' }]);
+  const ref = React.createRef<SidebarRef>();
+  const roomClient = { ...client, gmcp: { handlers: { 'Char.Items': { sendRoom: vi.fn() } } }, sendCommand: vi.fn() } as unknown as MudClient;
+  render(<><button type="button">Elsewhere</button><Sidebar ref={ref} client={roomClient} collapsed={false} onToggleCollapse={vi.fn()} /></>);
+  // Another tab is showing, so the Room tab's panel is hidden until asked for.
+  fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+  screen.getByRole('button', { name: 'Elsewhere' }).focus();
+
+  act(() => { useItemsStore.getState().select('#12'); });
+  act(() => { ref.current?.switchToTab(ref.current.indexOfTab('room-tab'), 'room-contents-list'); });
+  const things = screen.getByRole('listbox', { name: 'Things' });
+  expect(screen.getByRole('tab', { name: 'Room' })).toHaveAttribute('aria-selected', 'true');
+  expect(things).toHaveFocus();
+  // Landing does not move the selection: the row and its card are the thing that was named.
+  expect(things).toHaveAttribute('aria-activedescendant', 'room-contents-list-item-#12');
+  expect(useItemsStore.getState().selected?.id).toBe('#12');
+  expect(screen.getByRole('option', { name: 'plate' })).toHaveAttribute('aria-selected', 'true');
+  expect(roomClient.sendCommand).not.toHaveBeenCalled();
+
+  act(() => { useItemsStore.getState().select('Ann'); });
+  act(() => { ref.current?.switchToTab(ref.current.indexOfTab('room-tab'), 'room-players-list'); });
+  expect(screen.getByRole('listbox', { name: 'People' })).toHaveFocus();
+  expect(useItemsStore.getState().selected?.id).toBe('Ann');
+});
+
 it('tells a panel it is showing only while its tab is selected, the sidebar is not collapsed, and the sidebar itself is showing', () => {
   useItemsStore.getState().setLocationItems('inv', []);
   const shown = () => screen.getByText('Inventory contents').getAttribute('data-shown');

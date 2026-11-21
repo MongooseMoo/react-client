@@ -9,7 +9,8 @@ import { useItemsStore } from "../stores/itemsStore";
 import { useSpatialStore } from "../stores/spatialStore";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { compareDirections, directionLabel } from "../map/directions";
-import { type RoomEntry, roomContents } from "../map/roomContents";
+import { HOLDING_LISTS } from "../boundNames";
+import { type RoomEntry, layoutOfRoom, roomContents } from "../map/roomContents";
 import { describeDoorway, describeExit, personLabel, thingKind } from "../map/roomLayout";
 import AvatarPortrait from "../avatar/portrait";
 import AccessibleList from "./AccessibleList";
@@ -55,7 +56,7 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
   const selectedId = useItemsStore((state) => state.selected?.id ?? null);
   const select = useItemsStore((state) => state.select);
   const youId = useSpatialStore((state) => state.listenerEntityId);
-  const layout = storedLayout && (!roomInfo || storedLayout.num === roomInfo.num) ? storedLayout : null;
+  const layout = layoutOfRoom(storedLayout, roomInfo);
 
   const charItemsHandler = client.gmcp.handlers['Char.Items'];
 
@@ -117,9 +118,9 @@ const RoomInfoDisplay: React.FC<RoomInfoDisplayProps> = ({ client }) => {
 
   const headingId = "room-info-heading";
   const contentsHeadingId = "room-contents-heading";
-  const contentsListId = "room-contents-list";
+  const contentsListId = HOLDING_LISTS.things.listId;
   const playersHeadingId = "room-players-heading";
-  const playersListId = "room-players-list";
+  const playersListId = HOLDING_LISTS.people.listId;
 
   if (!roomInfo && !layout && things.length === 0) {
     return (

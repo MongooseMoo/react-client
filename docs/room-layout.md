@@ -214,7 +214,8 @@ There is **one selection**, kept in the items store (`selected`: the id, with th
 `lifetime` when it has one). The selected row in either list, the outlined thing in the picture,
 the selected row in the Inventory tab and the thing interact mode is on (`docs/keystrokes.md`)
 are all that one value. It is set by arrowing to or clicking a row, by clicking a thing or person
-in the picture, or by interact mode's Tab. Selecting never sends a command. The selection clears
+in the picture, by interact mode's Tab, or by activating a name in the room's text ("Names in the
+room's text", below). Selecting never sends a command. The selection clears
 when its thing leaves the list, the layout or the room, when the layout sends the same id with
 another `lifetime`, and when `Room.Info` names another room (something you carry stays selected).
 
@@ -235,6 +236,41 @@ focus never moves. When the selected thing leaves while focus is in its card, fo
 its list, which then selects the row now in that place; when focus is on the list itself, the
 list selects that row at once. With focus anywhere else the selection just clears. The Inventory
 tab's list does the same.
+
+#### Names in the room's text
+
+In a room description sent as an HTML line (`Client.Html` `Add_html`), the server may bind a name
+to what it names:
+
+```html
+On the low table are <a class="thing" data-thing="#29612">portable radio</a> and a plate holding
+<a class="thing" data-thing="#29613 #29614 #29615 #29616">four biscuits</a>.
+```
+
+`data-thing` is one or more object ids, each `#` and digits, separated by single spaces: the same
+ids `Char.Items` and `Room.Layout` use. A grouped phrase lists its members. The server sends no
+`href` and no other attribute. On telnet, and in an ANSI line, the same sentence is plain words;
+the client never matches words to things itself.
+
+The client keeps `data-thing` only on `a.thing` and only when the whole value has that form
+(`src/components/serverHtml.tsx`); any other value, and `data-thing` on any other element, is
+removed and the name stays as plain text. A name it keeps gets `href="#"`, so it is an ordinary
+link in the transcript: a screen reader lists and announces it as a link named by its text
+("portable radio, link"), Tab reaches it, and Enter or a click activates it. Nothing is added to
+what is spoken.
+
+Activating a bound name never sends a command and never changes the input. It takes the name's ids
+in order and finds the first that is here now: in the Things or People list of the Room tab (the
+room's items and the layout's things), or carried. That one becomes the selection; the sidebar is
+shown (and expanded) with the Room tab, and focus moves to the list that holds it, Things or
+People, with its row selected and its card and the server's actions under the list. For a grouped
+phrase the members are that list's rows: the first is selected and the arrow keys reach the
+others. A name whose thing you are carrying lands in the Inventory tab's list instead. When none
+of the ids is here any more (an old line, or the thing has left), nothing is selected, focus stays
+on the link, and "portable radio: no longer here" is announced politely.
+
+A bound name works the same in older transcript lines and after a reload, because lines are kept
+as their source and rebuilt. Copied text and the saved log hold the name as plain words.
 
 ### Inspecting a construction
 

@@ -4,7 +4,10 @@ import type React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type MudClient from "../client";
 import { useConnectionStore } from "../stores/connectionStore";
+import { useInputStore } from "../stores/inputStore";
+import { useItemsStore } from "../stores/itemsStore";
 import { useOutputStore } from "../stores/outputStore";
+import { useRoomStore } from "../stores/roomStore";
 import { personalStorageKey, usePersonalDataStore } from '../stores/personalDataStore';
 import Output, { type OutputLine, OutputType } from "./output";
 
@@ -915,5 +918,190 @@ describe("Output provisional away lines", () => {
     await flush();
 
     expect(rendered()).toEqual([]);
+  });
+});
+
+describe("Output bound names (a.thing[data-thing] from the server)", () => {
+  const stored = new Map<string, string>();
+  const sendCommand = vi.fn();
+  const focusInput = vi.fn();
+  const onShowHoldingList = vi.fn();
+  const flush = () => act(async () => { await Promise.resolve(); });
+  const mount = () => render(
+    <>
+      <Output client={{ sendCommand } as unknown as MudClient} focusInput={focusInput} onShowHoldingList={onShowHoldingList} />
+      <button type="button">Elsewhere</button>
+    </>
+  );
+  const link = (name: string) => screen.getByRole("link", { name });
+  const selected = () => useItemsStore.getState().selected?.id ?? null;
+  const TABLE_LINE = 'On the low table are <a class="thing" data-thing="#11">portable radio</a> and a plate holding ' +
+    '<a class="thing" data-thing="#20 #21 #22 #23">four biscuits</a>. <a class="thing" data-thing="#30">Ann</a> is here.';
+
+  /** Nothing was sent, and the input holds what the player had typed. */
+  const expectNoCommand = () => {
+    expect(sendCommand).not.toHaveBeenCalled();
+    expect(focusInput).not.toHaveBeenCalled();
+    expect(useInputStore.getState().text).toBe("half-typed");
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stored.clear();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => void stored.set(key, value));
+    useOutputStore.getState().reset();
+    useItemsStore.getState().reset();
+    useRoomStore.getState().reset();
+    useInputStore.getState().setText("half-typed");
+    const thing = (id: string, name: string, kind: "object" | "player" = "object") => ({
+      id, name, kind, fixed: false, mounted: false, lifetime: `${id}-life`,
+      shapes: [{ box: [[-0.5, 0.5], [-0.3, 0.3], [0, 0.45]] as [[number, number], [number, number], [number, number]] }],
+    });
+    // The radio and Ann are here; of the four biscuits #20 has been eaten.
+    useRoomStore.getState().setRoomInfo({ num: 7, name: "Sitting room", exits: {} });
+    useRoomStore.getState().setRoomLayout({
+      num: 7, size: [5, 4, 2.5], exits: [],
+      things: [thing("#11", "portable radio"), thing("#21", "biscuit"), thing("#22", "biscuit"), thing("#23", "biscuit"), thing("#30", "Ann", "player")],
+    });
+    useItemsStore.getState().setLocationItems("room", [{ id: "#11", name: "portable radio" }, { id: "#30", name: "Ann" }]);
+  });
+
+  afterEach(() => {
+    vi.mocked(localStorage.getItem).mockImplementation(() => null);
+    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
+    useOutputStore.getState().reset();
+    useItemsStore.getState().reset();
+    useRoomStore.getState().reset();
+    useInputStore.getState().setText("");
+  });
+
+  it("selects the named thing and asks for the Things list, sending nothing", async () => {
+    mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    expect(fireEvent.click(link("portable radio"))).toBe(false); // the link's own navigation is cancelled
+    expect(selected()).toBe("#11");
+    expect(onShowHoldingList).toHaveBeenCalledWith("things");
+    expectNoCommand();
+  });
+
+  it("offers a grouped phrase by selecting its first member that is still here", async () => {
+    mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    fireEvent.click(link("four biscuits"));
+    expect(selected()).toBe("#21");
+    expect(onShowHoldingList).toHaveBeenCalledWith("things");
+    expectNoCommand();
+  });
+
+  it("asks for the People list for a person", async () => {
+    mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    fireEvent.click(link("Ann"));
+    expect(selected()).toBe("#30");
+    expect(onShowHoldingList).toHaveBeenCalledWith("people");
+    expectNoCommand();
+  });
+
+  it("says a name is no longer here when none of its things is, selecting nothing and leaving focus", async () => {
+    mount();
+    useOutputStore.getState().addHtml('You remember <a class="thing" data-thing="#77 #78">two candles</a>.');
+    await flush();
+    useItemsStore.getState().select("#11");
+    mockAnnounce.mockClear();
+    link("two candles").focus();
+    fireEvent.click(link("two candles"));
+    expect(mockAnnounce).toHaveBeenCalledWith("two candles: no longer here", "polite");
+    expect(selected()).toBe("#11");
+    expect(onShowHoldingList).not.toHaveBeenCalled();
+    expect(link("two candles")).toHaveFocus();
+    expectNoCommand();
+  });
+
+  it("is a link the keyboard reaches, and Enter on it is left to the browser to activate", async () => {
+    mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    const radio = link("portable radio") as HTMLAnchorElement;
+    expect(radio.tagName).toBe("A");
+    expect(radio.getAttribute("href")).toBe("#");
+    expect(radio.tabIndex).toBe(0);
+    radio.focus();
+    expect(radio).toHaveFocus();
+    // The transcript's review keys do not take Enter (or anything) from a link inside it...
+    expect(fireEvent.keyDown(radio, { key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(radio, { key: "ArrowUp" })).toBe(true);
+    // ...so the browser turns Enter into the link's click, as it does for an exit link.
+    radio.click();
+    expect(selected()).toBe("#11");
+    expect(onShowHoldingList).toHaveBeenCalledWith("things");
+    expectNoCommand();
+  });
+
+  it("leaves exit and command links doing what they did", async () => {
+    mount();
+    useOutputStore.getState().addMessage("Go @[exit:north]north@[/].");
+    useOutputStore.getState().addHtml('<a class="command" data-text="look radio" href="#">look</a>');
+    await flush();
+    fireEvent.click(link("north"));
+    expect(sendCommand).toHaveBeenCalledWith("north");
+    fireEvent.click(link("look"));
+    expect(useInputStore.getState().text).toBe("look radio");
+    expect(focusInput).toHaveBeenCalled();
+    expect(onShowHoldingList).not.toHaveBeenCalled();
+    expect(selected()).toBeNull();
+  });
+
+  it("still works once the line has aged into frozen history", async () => {
+    const { container } = mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    for (let index = 0; index < Output.LIVE_WINDOW_SIZE + 5; index++) useOutputStore.getState().addMessage(`later ${index}`);
+    await flush();
+    const radio = link("portable radio");
+    // Frozen lines are static markup in the container before the live lines.
+    const frozen = container.querySelector(".output > div:not([data-line-id])");
+    expect(frozen?.contains(radio)).toBe(true);
+    fireEvent.click(radio);
+    expect(selected()).toBe("#11");
+    expect(onShowHoldingList).toHaveBeenCalledWith("things");
+    expectNoCommand();
+  });
+
+  it("survives being saved and restored, and still works", async () => {
+    const first = mount();
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    first.unmount(); // flushes the save
+    const saved = JSON.parse(stored.get(personalStorageKey("output") ?? "") ?? "null") as { data: Array<{ sourceType: string; sourceContent: string }> };
+    expect(saved.data.at(-1)).toMatchObject({ sourceType: "html", sourceContent: TABLE_LINE });
+    useOutputStore.getState().reset();
+
+    mount();
+    const biscuits = link("four biscuits");
+    expect(biscuits.getAttribute("data-thing")).toBe("#20 #21 #22 #23");
+    fireEvent.click(biscuits);
+    expect(selected()).toBe("#21");
+    expect(onShowHoldingList).toHaveBeenCalledWith("things");
+    expectNoCommand();
+  });
+
+  it("puts the plain name in copied text, the saved log and line review", async () => {
+    let output: Output | null = null;
+    const { container } = render(<Output ref={(value) => { output = value; }} client={{ sendCommand } as unknown as MudClient} />);
+    useOutputStore.getState().addHtml(TABLE_LINE);
+    await flush();
+    const plain = "On the low table are portable radio and a plate holding four biscuits. Ann is here.";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: mockClipboardWriteText } });
+    mockClipboardWriteText.mockResolvedValue(undefined);
+    await act(async () => { await output!.copyLog(); });
+    expect(mockClipboardWriteText).toHaveBeenLastCalledWith(plain);
+    // The saved log is the transcript's markup; its text is the same plain line.
+    expect(container.querySelector(".output-line-serverMessage")?.textContent).toBe(plain);
+    mockAnnounce.mockClear();
+    output!.reviewRecentOutputLine(1);
+    expect(mockAnnounce).toHaveBeenCalledWith(plain, "polite");
   });
 });

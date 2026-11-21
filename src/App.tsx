@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { eventKey } from "./keystrokeChords";
 import { useBeforeunload } from "react-beforeunload";
 import "./App.css";
+import { HOLDING_LISTS, type HoldingList } from "./boundNames";
 import type MudClient from "./client";
 import AutoLogDialog, {
   type AutoLogDialogRef,
@@ -127,7 +128,8 @@ function App() {
   const [client, setClient] = useState<MudClient | null>(null);
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
-  const [sidebarFocusRequest, setSidebarFocusRequest] = useState<{ index: number } | null>(null);
+  /** The tab to show and focus; `elementId` names the element of its panel to focus instead of the first control. */
+  const [sidebarFocusRequest, setSidebarFocusRequest] = useState<{ index: number; elementId?: string } | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(loadSidebarWidth);
 
   // Persist the user-chosen sidebar width, debounced so drags don't
@@ -271,9 +273,21 @@ function App() {
     setSidebarFocusRequest({ index });
   }, [appsRequest, client]);
 
+  // A bound name activated in the transcript: its thing is selected; land in the list that holds it.
+  const showHoldingList = useCallback((list: HoldingList) => {
+    const { tabId, listId } = HOLDING_LISTS[list];
+    const index = sidebarRef.current?.indexOfTab(tabId) ?? -1;
+    if (index < 0) return;
+    setShowSidebar(true);
+    setSidebarCollapsed(false);
+    setSidebarFocusRequest({ index, elementId: listId });
+  }, []);
+
   useLayoutEffect(() => {
     if (sidebarFocusRequest && showSidebar && !sidebarCollapsed) {
-      sidebarRef.current?.switchToTab(sidebarFocusRequest.index);
+      const { index, elementId } = sidebarFocusRequest;
+      if (elementId) sidebarRef.current?.switchToTab(index, elementId);
+      else sidebarRef.current?.switchToTab(index);
       setSidebarFocusRequest(null);
     }
   }, [sidebarFocusRequest, showSidebar, sidebarCollapsed]);
@@ -579,6 +593,7 @@ function App() {
               client={client}
               ref={outRef}
               focusInput={focusInput}
+              onShowHoldingList={showHoldingList}
             />
           </main>
           <section aria-label="Command input" style={{ gridArea: "input" }}>

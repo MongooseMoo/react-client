@@ -39,6 +39,26 @@ describe('AccessibleList with the selection held by its caller', () => {
     expect(screen.getByRole('listbox')).not.toHaveFocus();
   });
 
+  it('brings the row selected before focus arrived into view, but does not scroll under a pointer', () => {
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    try {
+      // Selected while focus was elsewhere (a name activated in the transcript), then focused.
+      render(list('c', vi.fn()));
+      expect(scrolled).not.toHaveBeenCalled();
+      act(() => screen.getByRole('listbox').focus());
+      expect(scrolled.mock.instances).toEqual([screen.getByRole('option', { name: 'Banana' })]);
+      expect(scrolled).toHaveBeenLastCalledWith({ block: 'nearest' });
+      // A press on a row focuses the list too; the list must not move under the pointer.
+      act(() => screen.getByRole('listbox').blur());
+      scrolled.mockClear();
+      fireEvent.mouseDown(screen.getByRole('option', { name: 'Apple' }));
+      act(() => screen.getByRole('listbox').focus());
+      expect(scrolled).not.toHaveBeenCalled();
+    } finally {
+      scrolled.mockRestore();
+    }
+  });
+
   it('on focus, or on Down, with nothing selected goes to the place it last held', () => {
     const onSelect = vi.fn();
     const { rerender } = render(list('b', onSelect));
