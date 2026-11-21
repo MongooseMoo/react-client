@@ -21,7 +21,11 @@ export interface RoomEntry {
   where: string;
 }
 
-const plainName = (name: string) => (stripMudAnsiTags(name) || name).trim().toLowerCase();
+/** The stored layout when it is this room's: one sent for another room than Room.Info names is not drawn or listed. */
+export const layoutOfRoom = (layout: RoomLayout | null, info: { num: number } | null): RoomLayout | null =>
+  layout && (!info || layout.num === info.num) ? layout : null;
+
+const plainName =(name: string) => (stripMudAnsiTags(name) || name).trim().toLowerCase();
 
 /**
  * The room's things and people, each once. Things keep the server's item order, then those only the

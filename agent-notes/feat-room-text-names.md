@@ -14,11 +14,25 @@ deployed.
 
 ## State
 
-Started 2026-11-20. Reading done for `output.tsx`, `serverHtml.tsx`,
-`itemsStore.ts`, `RoomInfoDisplay.tsx`, `sidebar.tsx`, `tabs.tsx`,
-`AccessibleList.tsx`, `roomContents.ts`, `App.tsx`. No code written yet.
+Started 2026-11-20. Done and committed so far, each test written first and
+seen failing:
 
-What the source does today:
+1. Sanitizer (`src/components/serverHtml.tsx`, tests in
+   `serverHtml.test.tsx`): `data-thing` kept only on `a.thing` with a value of
+   the id-list form; kept names get `href="#"`.
+2. `src/boundNames.ts` (tests `boundNames.test.ts`): `selectFirstHere(ids)`
+   selects the first id that is here and returns which list holds it
+   (`things`, `people`, `inventory`) or null; `HOLDING_LISTS` names each
+   list's tab and listbox element id, used by `RoomInfoDisplay.tsx` and
+   `inventory.tsx` for their list ids.
+3. `src/components/output.tsx` `handleOutputClick`: the `a.thing[data-thing]`
+   branch, calling the new optional prop `onShowHoldingList(list)` or
+   announcing "<name>: no longer here". Tests in `output.test.tsx`
+   ("Output bound names").
+
+Left: `tabs.tsx` / `sidebar.tsx` / `App.tsx` so the list gets focus; docs.
+
+What the source did before this work:
 
 - Exit links come only from ANSI lines: `src/ansiParser.tsx:74` makes
   `<a data-exit class="exit" href="#">`. The `href="#"` is what makes it a

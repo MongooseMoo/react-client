@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect } from 'react';
+import { HOLDING_LISTS } from '../boundNames';
 import type MudClient from '../client';
 import type { Item } from '../gmcp/Char/Items';
 import { type ItemAction, performItemAction } from '../itemActions';
@@ -30,7 +31,7 @@ const Inventory: React.FC<InventoryProps> = ({ client }) => {
   }, [client]);
 
   const headingId = "inventory-heading";
-  const listId = "inventory-listbox";
+  const listId = HOLDING_LISTS.inventory.listId;
 
   return (
     <div className="inventory-tab-content" role="region" aria-labelledby={headingId}>

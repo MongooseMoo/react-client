@@ -4,6 +4,7 @@ import { BUFFER_LETTERS } from "../reservedShortcuts";
 import "./output.css";
 import React from "react";
 import { parseToElements } from "../ansiParser";
+import { boundNameIds, type HoldingList, selectFirstHere } from "../boundNames";
 import stripAnsi from "strip-ansi";
 import type MudClient from "../client";
 import ReactDOMServer from "react-dom/server";
@@ -150,6 +151,8 @@ const OutputLineContent = React.memo(({ line, onExitClick }: OutputLineContentPr
 interface Props {
   client: MudClient;
   focusInput?: () => void; // Add optional prop to focus the input
+  /** A bound name was activated and its thing selected: show the list that holds it and put focus there. */
+  onShowHoldingList?: (list: HoldingList) => void;
 }
 
 interface State {
@@ -757,6 +760,17 @@ scrollToBottom = () => { const output = this.outputRef.current; if (output) {
       if (exitDirection) {
         this.props.client.sendCommand(exitDirection);
       }
+      return;
+    }
+
+    // --- Handle bound names (a name the server tied to a thing or person) ---
+    // Selects; never sends a command or touches the input.
+    const boundName = targetElement.closest('a.thing[data-thing]');
+    if (boundName instanceof HTMLAnchorElement) {
+      event.preventDefault();
+      const list = selectFirstHere(boundNameIds(boundName.dataset.thing));
+      if (list) this.props.onShowHoldingList?.(list);
+      else announce(`${(boundName.textContent ?? '').trim()}: no longer here`, 'polite');
       return;
     }
 
