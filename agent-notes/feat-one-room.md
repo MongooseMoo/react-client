@@ -43,8 +43,8 @@ What exists, by change:
 2. **One list each.** The pure function `roomContents` (`src/map/roomContents.ts`)
    joins `Char.Items` room items, `Room.Layout` things and `Room.Players` by id.
    `RoomInfoDisplay` renders Things and People from it with `AccessibleList`.
-   `RoomLayoutView` keeps the picture, size, finishes and the doorway list; its
-   People and Things lists are gone. The parts and drawer JSX moved out of it
+   `RoomLayoutView` keeps the picture, size and finishes; its People, Things and
+   (since the follow-up round) Exits lists are gone. The parts and drawer JSX moved out of it
    into `RoomThingControls.tsx`. In `roomLayout.ts`, `describeThing`,
    `describeUnshaped` and `namedWithKind` are replaced by `describeWhere`,
    `thingKind` and `personLabel`.
@@ -167,8 +167,9 @@ across many tab switches.
   that the Map tab's list carried in the row are now on the selected thing's
   card ("table, wood"), so they are not lost, but they are no longer heard while
   arrowing.
-- **A person's row is portrait, name and label** as assigned; where they are is
-  on their card. The old Map tab list said where in the row.
+- **A person's row is portrait, name, label and where they are** (the lead
+  reversed my first version, which left where to the card: Q arrows through that
+  list and the old one said it). The card says it too.
 - **Who gets which card.** A person with a `Room.Players` entry gets the player
   card (Page, Say To, Look, Follow by their `Room.Players` name). Anyone else in
   the People list (a `person` who is not a player, or you) gets the item card
@@ -200,13 +201,11 @@ across many tab switches.
 - `Room.Players` has no id, so the player card's command name is still found by
   matching names (`layoutPersonNamed`), layout or not. The join of rows,
   portraits and labels is by id.
-- The Room tab is not `mountOnSelect` in `sidebar.tsx`, so the room view is now
-  mounted whenever there is a layout, even while another tab shows. With a 3D
-  view as the stored choice, three.js loads and the scene follows updates while
-  hidden. Not measured.
-- The Room tab now has two headings named "Exits": the exit buttons (existing)
-  and the room view's doorway descriptions (moved in with the view). Left as is;
-  merging them was not among the allowed changes.
+- The Room tab is not `mountOnSelect` in `sidebar.tsx`, so the room view is
+  mounted whenever there is a layout, even while another tab shows. Fixed in the
+  follow-up round for the 3D view (above).
+- Moving the view in gave the Room tab two headings named "Exits". Fixed in the
+  follow-up round: one list (above).
 - jsdom has no `onpointerdown` property, so Preact listens for "PointerDown";
   the drag test in `RoomLayoutView.test.tsx` picks the event name accordingly.
 - esbuild refuses a CSS import without an output path; the browser spec's build
