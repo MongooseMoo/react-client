@@ -392,6 +392,37 @@ upright round part as an ellipse the size of its widest ring, any other part as 
 convex outline round it: an arc's wedge, an extrude's outline, a sweep's tube, a loft's sections).
 It draws no table, seat or door symbol over such a thing; its parts show what it is.
 
+### Previewing forms
+
+To look at a form before any live object uses it, draw it headless with the client's own scene code:
+
+```
+uv run --no-project --python 3.12 python C:/Users/Q/code/devtools/private_desktop.py run LayoutPreview -- node scripts/preview-layout.mjs <in.json> <outdir>
+```
+
+Run it from the repository's root; `private_desktop.py` keeps it off the visible desktop, and the browser it starts
+is headless anyway. `<in.json>` is either a Room.Layout as the game sends it (with `size` and `things`; people in
+it are drawn as figures), or one thing: its box `"size": [w, d, h]` in metres, and any other keys of a Room.Layout
+thing, exactly as Room.Layout sends them, for example
+`{"size": [0.2, 0.05, 1.1], "name": "sword", "form_parts": [...], "material": [{"species": "steel", "fraction": 1}]}`,
+or a person: `{"size": [0.5, 0.3, 1.75], "kind": "player", "appearance": {...}}`. A key the game adds to things later
+is taken the same way. The thing stands on the floor in the middle of an empty room.
+
+The script writes `front.png`, `three-quarter.png`, `side.png`, `back.png` and `top.png` (960 by 720) into
+`<outdir>`: front from the south, side from the east, back from the north, top straight down with north up, each
+framing everything drawn, with the room's walls and ceiling left out and its floor, lights, materials and shadows
+kept. It prints a line per thing: `#1 sword: 4 parts, drawn`, or, when the client would not draw its parts (one part
+it cannot draw drops the whole list; see above), the decoder's reason, naming the first part it rejects by number and
+role:
+
+```
+#1 sword: 4 parts, NOT DRAWN: part 0 (blade): "bevel" must be [inset, depth] in metres, neither negative, depth at most half the height (0.0035)
+```
+
+It exits 0 when everything is drawn; 1 when a part list is not drawn, the file is not JSON or not one of the two
+forms above (each said in a line), or the page reports an error; 2 when the command line is wrong. The page it
+loads, `src/preview/layoutPreview.html`, is not part of the app or its build.
+
 ### Using a fitted drawer
 
 In the Room tab, select the desk under **Things**. Under its card, focus

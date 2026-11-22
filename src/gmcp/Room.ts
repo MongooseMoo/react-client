@@ -342,72 +342,143 @@ export function simpleOutline(points: Array<[number, number]>): boolean {
 
 const whole = (value: unknown): value is number => Number.isInteger(value);
 
-/** The fields of an extrude, sweep or loft, a box's `round` and a turned shape's `arc`, as docs/room-layout.md gives them. */
-function validShapeFields(value: Record<string, unknown>, shape: LayoutPartShape, size: LayoutVector): boolean {
-  if (value.round !== undefined && !(shape === "box" && finite(value.round) && value.round > 0 && value.round <= Math.min(...size) / 2 + 1e-9)) return false;
-  if (value.arc !== undefined && !(TURNED.includes(shape) && Array.isArray(value.arc) && value.arc.length === 2 &&
-    value.arc.every(finite) && value.arc[1] > 0 && value.arc[1] < 2 * Math.PI)) return false;
-  if (value.smooth !== undefined && typeof value.smooth !== "boolean") return false;
+/**
+ * Why the fields of an extrude, sweep or loft, a box's `round` or a turned shape's `arc` cannot be drawn, as
+ * docs/room-layout.md gives them; undefined when they can.
+ */
+function shapeFieldsProblem(value: Record<string, unknown>, shape: LayoutPartShape, size: LayoutVector): string | undefined {
+  if (value.round !== undefined) {
+    if (shape !== "box") return `"round" is only for a box, not a ${shape}`;
+    if (!(finite(value.round) && value.round > 0 && value.round <= Math.min(...size) / 2 + 1e-9)) {
+      return `"round" must be a positive number of metres, at most half the box's shortest side (${Math.min(...size) / 2})`;
+    }
+  }
+  if (value.arc !== undefined) {
+    if (!TURNED.includes(shape)) return `"arc" is only for ${TURNED.join(", ")}, not a ${shape}`;
+    if (!(Array.isArray(value.arc) && value.arc.length === 2 && value.arc.every(finite) && value.arc[1] > 0 && value.arc[1] < 2 * Math.PI)) {
+      return '"arc" must be [start, sweep] in radians, sweep more than 0 and less than a whole turn (2π)';
+    }
+  }
+  if (value.smooth !== undefined && typeof value.smooth !== "boolean") return '"smooth" must be true or false';
   // Only a loft has a shell; an extrude or sweep is always solid.
-  if ((shape === "extrude" || shape === "sweep") && value.wall !== undefined) return false;
+  if ((shape === "extrude" || shape === "sweep") && value.wall !== undefined) return `an ${shape} is solid: it takes no "wall"`;
   if (shape === "extrude") {
-    if (!fractionPoints(value.outline, 3, 128) || outlineArea(value.outline) <= 0 || !simpleOutline(value.outline)) return false;
+    if (!fractionPoints(value.outline, 3, 128)) return '"outline" must be 3 to 128 [x, y] pairs, each from 0 to 1';
+    if (outlineArea(value.outline) <= 0) return '"outline" must run anticlockwise (it runs clockwise or has no area)';
+    if (!simpleOutline(value.outline)) return '"outline" crosses or touches itself, or repeats a corner';
     const bevel = value.bevel;
-    return bevel === undefined || (Array.isArray(bevel) && bevel.length === 2 && bevel.every(finite) && bevel[0] >= 0 && bevel[1] >= 0 &&
-      bevel[1] <= size[2] / 2 + 1e-9);
+    if (bevel !== undefined && !(Array.isArray(bevel) && bevel.length === 2 && bevel.every(finite) && bevel[0] >= 0 && bevel[1] >= 0 &&
+      bevel[1] <= size[2] / 2 + 1e-9)) {
+      return `"bevel" must be [inset, depth] in metres, neither negative, depth at most half the height (${size[2] / 2})`;
+    }
+    return undefined;
   }
   if (shape === "sweep") {
     const { path, radius, aspect } = value;
-    return Array.isArray(path) && path.length >= 2 && path.length <= 32 && path.every((p) => vector(p) && p.every(fraction)) &&
-      Array.isArray(radius) && radius.length === path.length && radius.every((r) => finite(r) && r > 0) &&
-      (aspect === undefined || (finite(aspect) && aspect > 0));
+    if (!(Array.isArray(path) && path.length >= 2 && path.length <= 32 && path.every((p) => vector(p) && p.every(fraction)))) {
+      return '"path" must be 2 to 32 [x, y, z] points, each from 0 to 1';
+    }
+    if (!(Array.isArray(radius) && radius.length === path.length && radius.every((r) => finite(r) && r > 0))) {
+      return `"radius" must be one positive number of metres per path point (${path.length})`;
+    }
+    if (aspect !== undefined && !(finite(aspect) && aspect > 0)) return '"aspect" must be a positive number';
+    return undefined;
   }
   if (shape === "loft") {
     const { sections, caps, holes } = value;
-    if (!Array.isArray(sections) || sections.length < 2 || sections.length > 16) return false;
-    if (!sections.every((s) => record(s) && fraction(s.z) && fractionPoints(s.outline, 3, 48) && outlineArea(s.outline) >= -1e-9)) return false;
+    if (!Array.isArray(sections) || sections.length < 2 || sections.length > 16) return '"sections" must be 2 to 16 sections';
+    for (const [i, s] of sections.entries()) {
+      if (!(record(s) && fraction(s.z) && fractionPoints(s.outline, 3, 48))) {
+        return `section ${i} must be {"z": 0 to 1, "outline": 3 to 48 [x, y] pairs from 0 to 1}`;
+      }
+      if (outlineArea(s.outline) < -1e-9) return `section ${i}'s outline runs clockwise; it must run anticlockwise`;
+    }
     const n = sections[0].outline.length;
-    if (!sections.every((s, i) => s.outline.length === n && (i === 0 || s.z > sections[i - 1].z))) return false;
-    if (caps !== undefined && !(caps === "both" || caps === "none" || caps === "top" || caps === "bottom")) return false;
-    return holes === undefined || (Array.isArray(holes) && holes.every((h) => Array.isArray(h) && h.length === 4 && h.every(whole) &&
-      h[0] >= 0 && h[0] < h[1] && h[1] < sections.length && h[2] >= 0 && h[2] < n && h[3] >= 0 && h[3] < n && h[2] !== h[3]));
+    for (const [i, s] of sections.entries()) {
+      if (s.outline.length !== n) return `section ${i} has ${s.outline.length} points; every section must have ${n}, as section 0 does`;
+      if (i > 0 && !(s.z > sections[i - 1].z)) return `section ${i}'s z (${s.z}) must be above section ${i - 1}'s (${sections[i - 1].z})`;
+    }
+    if (caps !== undefined && !(caps === "both" || caps === "none" || caps === "top" || caps === "bottom")) {
+      return '"caps" must be "both", "none", "top" or "bottom"';
+    }
+    if (holes !== undefined && !(Array.isArray(holes) && holes.every((h) => Array.isArray(h) && h.length === 4 && h.every(whole) &&
+      h[0] >= 0 && h[0] < h[1] && h[1] < sections.length && h[2] >= 0 && h[2] < n && h[3] >= 0 && h[3] < n && h[2] !== h[3]))) {
+      return `each of "holes" must be [s0, s1, i0, i1], whole numbers, 0 <= s0 < s1 <= ${sections.length - 1}, i0 and i1 from 0 to ${n - 1} and different`;
+    }
   }
-  return true;
+  return undefined;
 }
 
-function validFormPart(value: unknown): value is LayoutFormPart {
-  if (!record(value) || !vector(value.center) || !vector(value.size) || !value.size.every((n) => n > 0)) return false;
+/** Why a form part cannot be drawn (docs/room-layout.md), in words for the person who wrote it; undefined when it can. */
+export function formPartProblem(value: unknown): string | undefined {
+  if (!record(value)) return "a part must be an object";
+  if (!vector(value.center)) return '"center" must be three numbers';
+  if (!vector(value.size) || !value.size.every((n) => n > 0)) return '"size" must be three positive numbers';
   const shape = value.shape;
-  if (typeof shape !== "string" || !SHAPES.includes(shape as LayoutPartShape)) return false;
-  if (shape === "cone" && !fraction(value.top)) return false;
+  if (typeof shape !== "string" || !SHAPES.includes(shape as LayoutPartShape)) {
+    return `"shape" ${JSON.stringify(shape)} is not one the client draws (${SHAPES.join(", ")})`;
+  }
+  if (shape === "cone" && !fraction(value.top)) return 'a cone needs "top", from 0 to 1';
   if (shape === "lathe" && !(Array.isArray(value.profile) && value.profile.length >= 2 &&
-    value.profile.every((point: unknown) => Array.isArray(point) && point.length === 2 && point.every(fraction)))) return false;
-  if (!validShapeFields(value, shape as LayoutPartShape, value.size)) return false;
+    value.profile.every((point: unknown) => Array.isArray(point) && point.length === 2 && point.every(fraction)))) {
+    return 'a lathe needs "profile", at least two [r, z] pairs, each from 0 to 1';
+  }
+  const fields = shapeFieldsProblem(value, shape as LayoutPartShape, value.size);
+  if (fields) return fields;
   if (value.wall !== undefined) {
     const [a, b, c] = value.size;
     const closed = shape === "sphere" || shape === "capsule";
     if (!vector(value.wall) || !value.wall.every((n) => n >= 0) || 2 * value.wall[0] >= a || 2 * value.wall[1] >= b ||
-      (closed ? 2 : 1) * value.wall[2] >= c) return false;
+      (closed ? 2 : 1) * value.wall[2] >= c) {
+      return `"wall" must be three numbers of metres, none negative, leaving room inside the part (less than half its width and depth, and ${closed ? "half" : "all"} of its height)`;
+    }
   }
-  if (value.basis !== undefined && !(Array.isArray(value.basis) && value.basis.length === 3 &&
-    value.basis.every(unit))) return false;
+  if (value.basis !== undefined && !(Array.isArray(value.basis) && value.basis.length === 3 && value.basis.every(unit))) {
+    return '"basis" must be three unit vectors';
+  }
   const joint = value.joint;
   if (joint !== undefined && !(record(joint) && (joint.type === "hinge" || joint.type === "slide") && unit(joint.axis) &&
     (joint.type === "slide" || vector(joint.origin)) && pair(joint.range) && finite(joint.position) &&
-    joint.position >= joint.range[0] - 1e-9 && joint.position <= joint.range[1] + 1e-9)) return false;
+    joint.position >= joint.range[0] - 1e-9 && joint.position <= joint.range[1] + 1e-9)) {
+    return '"joint" must be a hinge (with "origin") or a slide, with a unit "axis", "range" [min, max] and a "position" inside it';
+  }
   if (value.role !== undefined || value.label !== undefined) {
     if (typeof value.role !== "string" || !value.role.trim() || /[\r\n\0]/.test(value.role) ||
-      typeof value.label !== "string" || !value.label.trim()) return false;
+      typeof value.label !== "string" || !value.label.trim()) {
+      return 'a part with a "role" or "label" needs both, as non-empty text on one line';
+    }
   }
   const fitting = value.fitting;
-  if (fitting === undefined) return true;
-  if (!record(fitting) || !namedTarget(fitting) || typeof fitting.opened !== "boolean" || !Array.isArray(fitting.contents)) return false;
-  return (!fitting.command || fitting.command === `${fitting.opened ? "close" : "open"} ${fitting.id}`) &&
-    (fitting.opened || fitting.contents.length === 0) && fitting.contents.every((item: unknown) =>
-      namedTarget(item) && (!item.command || item.command === `get ${item.id} from ${fitting.id}`));
+  if (fitting === undefined) return undefined;
+  if (!record(fitting) || !namedTarget(fitting) || typeof fitting.opened !== "boolean" || !Array.isArray(fitting.contents) ||
+    !((!fitting.command || fitting.command === `${fitting.opened ? "close" : "open"} ${fitting.id}`) &&
+      (fitting.opened || fitting.contents.length === 0) && fitting.contents.every((item: unknown) =>
+        namedTarget(item) && (!item.command || item.command === `get ${item.id} from ${fitting.id}`)))) {
+    return '"fitting" must name its object (id, name, lifetime, command), whether it is opened, and its contents (none while closed)';
+  }
+  return undefined;
 }
 
-const validFormParts = (value: unknown): value is LayoutFormPart[] => Array.isArray(value) && value.every(validFormPart);
+/** Why a part list cannot be drawn: its first part the client cannot draw, by number and role, and why. */
+export function formPartsProblem(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return '"form_parts" must be a list';
+  for (const [i, part] of value.entries()) {
+    const problem = formPartProblem(part);
+    if (problem) return `part ${i}${record(part) && typeof part.role === "string" ? ` (${part.role})` : ""}: ${problem}`;
+  }
+  return undefined;
+}
+
+const validFormParts = (value: unknown): value is LayoutFormPart[] => formPartsProblem(value) === undefined;
+
+/** A received Room.Layout as the views draw it: a thing whose part list holds a part the client cannot draw has none. */
+export function drawableLayout(data: RoomLayout): RoomLayout {
+  return {
+    ...data,
+    things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
+      ? thing : { ...thing, form_parts: undefined }),
+  };
+}
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];
 const shape = (value: unknown): value is LayoutShape => record(value) && (
@@ -466,11 +537,7 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("players", (data) => this.handlePlayers(data));
     this.on("addPlayer", (data) => this.handleAddPlayer(data));
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
-    this.on("layout", (data) => useRoomStore.getState().setRoomLayout({
-      ...data,
-      things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
-        ? thing : { ...thing, form_parts: undefined }),
-    }));
+    this.on("layout", (data) => useRoomStore.getState().setRoomLayout(drawableLayout(data)));
     this.on("layoutUpdate", (data) => {
       if (layoutUpdate(data)) useRoomStore.getState().updateRoomLayout(data);
     });
