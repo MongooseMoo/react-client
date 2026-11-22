@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { PLAN_CHARACTERS } from "../avatar/bodyPlans.fixture";
+import { TEST_CHARACTERS } from "../avatar/characters.fixture";
 import { contrast, INK_DARK, INK_LIGHT, MIN_CONTRAST, overlayHex } from "../avatar/colour";
 import { figureParams, HORN_TONE, STUBBLE_OPACITY } from "../avatar/figure";
 import { BAND_HEIGHT, CAP_LEAN, EYE_WHITE, figureGeometry, figureParts, HAIRLINE_WIDTH, LIDDED_BELOW } from "./figureMesh";
@@ -1563,6 +1565,21 @@ describe("round ten: where long curls and coils worn down meet the crown, chin-l
         // the lock beside the face narrowed to a point where the shoulder cut it.
         const shoulder = forwardAt(-1.1);
         expect(cheek - shoulder, `${texture} ${length_cm} cm: cheek ${cheek.toFixed(2)} at the shoulder ${shoulder.toFixed(2)}`).toBeLessThan(0.1);
+      }
+    }
+  });
+});
+
+describe("finite figures", () => {
+  it("gives every fixture character, in every posture, finite positions and a finite bounding box", () => {
+    for (const ch of [...TEST_CHARACTERS, ...PLAN_CHARACTERS]) {
+      for (const posture of ["standing", "sitting", "reclining"]) {
+        const g = figureGeometry(figureParams({ ...ch.appearance, posture }, { height: ch.height, footprint: ch.box ? { width: ch.box[0], depth: ch.box[1] } : undefined }));
+        const position = g.getAttribute("position");
+        const bad = Array.from(position.array).filter((n) => !Number.isFinite(n)).length;
+        expect(bad, `${ch.name} ${posture}`).toBe(0);
+        const box = g.boundingBox as THREE.Box3;
+        expect([...box.min.toArray(), ...box.max.toArray()].every(Number.isFinite), `${ch.name} ${posture}`).toBe(true);
       }
     }
   });

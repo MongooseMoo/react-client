@@ -1166,7 +1166,9 @@ export function figureParts(p: FigureParams): Part[] {
     if (long) {
       const at = fall.getAttribute("position");
       const close = carried && p.hairTexture === "wavy" ? WAVY_FALL_CLOSE : fine ? 1.25 : 1.6;
-      for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * ((top - at.getZ(i)) / (top - bottom)) ** close);
+      // (Floored at 0: the top row comes out of the cylinder a rounding error above `top`, and a negative number to a
+      // fractional power is NaN, which emptied the fall's top rows and its bounding box.)
+      for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * Math.max(0, (top - at.getZ(i)) / (top - bottom)) ** close);
     }
     // Its outline down the fall: round the back of the head, in toward the nape, then out over the shoulders to its
     // ends (a bob flicks out a little). A straight cone from the crown to the ends hung as a flat slab. Curls and coils
