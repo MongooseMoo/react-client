@@ -496,8 +496,16 @@ role:
 #1 sword: 4 parts, NOT DRAWN: part 0 (blade): "bevel" must be [inset, depth] in metres, neither negative, depth at most half the height (0.0035)
 ```
 
+For a person or a stand it also prints a line for each worn or held thing the client would not draw, with the
+reason: a garment whose parts it cannot draw (it is then coloured by area), naming the first part it rejects, or a
+held thing it leaves out:
+
+```
+#1 Ada: appearance garment 3 (an open-faced steel helm): parts not drawn, coloured by area: part 0: "frame" "tail" is not a body frame (head, neck, …)
+```
+
 It exits 0 when everything is drawn; 1 when a part list is not drawn, the file is not JSON or not one of the two
-forms above (each said in a line), or the page reports an error; 2 when the command line is wrong. The page it
+forms above (each said in a line), a worn or held thing is not drawn, or the page reports an error; 2 when the command line is wrong. The page it
 loads, `src/preview/layoutPreview.html`, is not part of the app or its build.
 
 ### Using a fitted drawer

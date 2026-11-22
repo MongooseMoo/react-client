@@ -7,7 +7,7 @@ import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
 import trestle from "../map/roomLayout.trestle.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
-import { GMCPRoom, type GMCPMessageRoomInfo, partMaterial } from "./Room";
+import { FRAME_NAMES, GMCPRoom, type GMCPMessageRoomInfo, partMaterial, wornProblems } from "./Room";
 
 const info = (num: number) => ({ num, name: `Room ${num}`, area: "Area" }) as GMCPMessageRoomInfo;
 
@@ -262,6 +262,21 @@ describe("Room.Layout", () => {
     expect(things[1].stand?.garments).toEqual(ARMOUR);
     expect(things[2].stand).toBeUndefined();
     expect(things[3].stand).toEqual({ garments: [{ name: SLEEVES.name, areas: SLEEVES.areas, layer: SLEEVES.layer, colour: SLEEVES.colour }], held: undefined });
+  });
+
+  it("says why a worn or held thing is not drawn, garment by garment", () => {
+    const person = armouredPerson("#5", 0);
+    expect(wornProblems(person)).toEqual([]);
+    const appearance = {
+      ...person.appearance,
+      garments: [{ ...HELM, form_parts: [{ ...HELM.form_parts?.[0], frame: "tail" }] }],
+      held: [{ ...SWORD, grip: { center: [0, 0, 0], axis: [2, 0, 0] } }],
+    };
+    expect(wornProblems({ appearance, stand: { held: [] } as never })).toEqual([
+      `appearance garment 0 (${HELM.name}): parts not drawn, coloured by area: part 0: "frame" "tail" is not a body frame (${FRAME_NAMES.join(", ")})`,
+      `appearance held 0 (${SWORD.name}): not drawn: "grip" must be {"center": three numbers, "axis": a unit vector}`,
+      '"stand" not drawn: it must be {"garments": [...], "held"?: [...]}',
+    ]);
   });
 
   it("rejects other rooms and old room incarnations", () => {
