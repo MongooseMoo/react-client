@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
 import { type Footprint, figureParams } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
+import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
 import { FigureCache, figureMesh, headOutline } from "./figureMesh";
 
 export { FigureCache };
@@ -161,19 +161,123 @@ function revolve(profile: Array<[number, number, number]>): THREE.BufferGeometry
 
 export type CameraMode = "dollhouse" | "eyes";
 
-/** Colour by a thing's largest material. Species not listed are drawn NEUTRAL. */
-export const MATERIAL_COLOURS: Readonly<Record<string, number>> = {
-  wood: 0x8b5a2b,
-  pine: 0x8b5a2b,
-  lcd: 0x16161a,
-  paper: 0xefe6c8,
-  foam: 0x6f7d9c,
-  cotton: 0x6f7d9c,
-  plastic: 0x9a9a9e,
-  metal: 0x8f9aa6,
-  steel: 0x8f9aa6,
+/**
+ * Common species: the colour a thing or part made of it is drawn in when no colour is sent, and its family (as the
+ * game's `$material_engine.profiles` has it), which picks its surface (`SURFACES`). A thing is coloured by its largest
+ * material; a thing whose species is not listed is drawn NEUTRAL with the plain surface.
+ */
+export const SPECIES: Readonly<Record<string, { colour: number; family: string }>> = {
+  wood: { colour: 0x8b5a2b, family: "wood" },
+  pine: { colour: 0x8b5a2b, family: "wood" },
+  oak: { colour: 0xa0703f, family: "wood" },
+  lcd: { colour: 0x16161a, family: "glass" },
+  glass: { colour: 0xcfe3ea, family: "glass" },
+  paper: { colour: 0xefe6c8, family: "cloth" },
+  cotton: { colour: 0x6f7d9c, family: "cloth" },
+  linen: { colour: 0xd9cfb8, family: "cloth" },
+  wool: { colour: 0x9b8f7e, family: "cloth" },
+  silk: { colour: 0xe8dcc8, family: "cloth" },
+  nylon: { colour: 0x5a6470, family: "cloth" },
+  polyester: { colour: 0x5a6878, family: "cloth" },
+  kevlar: { colour: 0xc8b45a, family: "cloth" },
+  leather: { colour: 0x5a301c, family: "leather" },
+  foam: { colour: 0x6f7d9c, family: "plastic" },
+  plastic: { colour: 0x9a9a9e, family: "plastic" },
+  rubber: { colour: 0x2a2a2c, family: "plastic" },
+  vinyl: { colour: 0x3a3a40, family: "plastic" },
+  plexiglas: { colour: 0xd8e8f0, family: "plastic" },
+  metal: { colour: 0x8f9aa6, family: "metal" },
+  steel: { colour: 0x8f9aa6, family: "metal" },
+  durasteel: { colour: 0x8a929c, family: "metal" },
+  Fe: { colour: 0x6e6e72, family: "metal" },
+  Al: { colour: 0xb8bcc2, family: "metal" },
+  Ti: { colour: 0x9aa0a6, family: "metal" },
+  Cu: { colour: 0xb87333, family: "metal" },
+  brass: { colour: 0xc9a648, family: "metal" },
+  bronze: { colour: 0xa8743a, family: "metal" },
+  Au: { colour: 0xd4af37, family: "metal" },
+  Ag: { colour: 0xc8c8cc, family: "metal" },
+  stone: { colour: 0x8c8a85, family: "stone" },
+  granite: { colour: 0x6f6c6a, family: "stone" },
+  limestone: { colour: 0xcfc6b0, family: "stone" },
+  concrete: { colour: 0x9a9893, family: "stone" },
+  ceramic: { colour: 0xe8e4dc, family: "ceramic" },
+  clay: { colour: 0xa45a3a, family: "ceramic" },
+  brick: { colour: 0x9c4a32, family: "ceramic" },
+  plaster: { colour: 0xe6e1d6, family: "ceramic" },
+  bone: { colour: 0xe3dac9, family: "flesh" },
+  H2O: { colour: 0x4a7fa8, family: "liquid" },
+  dirt: { colour: 0x5c4430, family: "earth" },
+  sand: { colour: 0xd2b98a, family: "earth" },
 };
 export const NEUTRAL = 0xb8b2a6;
+
+/** A family's colour, for a part whose species is not in SPECIES and that has no colour of its own. */
+export const FAMILY_COLOURS: Readonly<Record<string, number>> = {
+  metal: 0x8f9aa6,
+  glass: 0xcfe3ea,
+  wood: 0x8b5a2b,
+  leather: 0x5a301c,
+  cloth: 0x6f7d9c,
+  stone: 0x8c8a85,
+  ceramic: 0xe8e4dc,
+  plastic: 0x9a9a9e,
+  flesh: 0xc98b7a,
+  plant: 0x6b8f3a,
+  earth: 0x5c4430,
+  liquid: 0x4a7fa8,
+  ice: 0xdcecf4,
+  "energy field": 0x66ccff,
+  fungal_ingredient: 0xb8a68a,
+  grain_meal: 0xd8c8a0,
+};
+
+/**
+ * How a surface takes the light. `clearcoat` is a thin glossy layer over it (varnish, glaze), `sheen` the soft
+ * edge light of fabric, `opacity` below 1 lets what is behind show through, `glow` lights it from within by that
+ * share of its colour. A surface that lets light through casts no shadow.
+ */
+export interface Surface {
+  roughness: number;
+  metalness: number;
+  /** How strongly it mirrors the room (`RoomSceneInput.environment`) against a plain surface: metal more. Default 1. */
+  reflection?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  sheen?: number;
+  opacity?: number;
+  glow?: number;
+}
+
+/** Everything of no known family: matte, as every surface was before materials were sent. */
+export const PLAIN_SURFACE: Surface = { roughness: 0.8, metalness: 0.05 };
+
+/** Each material family's surface. */
+export const SURFACES: Readonly<Record<string, Surface>> = {
+  metal: { roughness: 0.25, metalness: 1, reflection: 2.6 },
+  glass: { roughness: 0.04, metalness: 0, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.02 },
+  ceramic: { roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 },
+  wood: { roughness: 0.6, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3 },
+  leather: { roughness: 0.55, metalness: 0, sheen: 0.6 },
+  cloth: { roughness: 0.95, metalness: 0, sheen: 1 },
+  stone: { roughness: 0.88, metalness: 0 },
+  earth: { roughness: 1, metalness: 0 },
+  plastic: { roughness: 0.32, metalness: 0 },
+  flesh: { roughness: 0.6, metalness: 0 },
+  plant: { roughness: 0.7, metalness: 0 },
+  liquid: { roughness: 0.05, metalness: 0, opacity: 0.75, clearcoat: 1, clearcoatRoughness: 0.02 },
+  ice: { roughness: 0.12, metalness: 0, opacity: 0.7, clearcoat: 1, clearcoatRoughness: 0.05 },
+  "energy field": { roughness: 0.2, metalness: 0, opacity: 0.45, glow: 0.9 },
+  fungal_ingredient: { roughness: 0.8, metalness: 0 },
+  grain_meal: { roughness: 0.95, metalness: 0 },
+};
+
+/** A family's surface; PLAIN_SURFACE for none or one the client does not know. */
+export function surfaceFor(family: string | undefined): Surface {
+  return family !== undefined && Object.hasOwn(SURFACES, family) ? SURFACES[family] : PLAIN_SURFACE;
+}
+
+const speciesOf = (species: string | undefined) => species !== undefined && Object.hasOwn(SPECIES, species) ? SPECIES[species] : undefined;
 export const PERSON_COLOUR = 0x4ade80;
 export const YOU_COLOUR = 0x5ba0ff;
 export const DOORWAY_COLOUR = 0xfb923c;
@@ -193,8 +297,27 @@ export const DOLLHOUSE_FOV = 50;
 export const EYES_FOV = 70;
 
 export function thingColour(thing: LayoutThing): number {
-  const species = mainMaterial(thing);
-  return species !== undefined && Object.hasOwn(MATERIAL_COLOURS, species) ? MATERIAL_COLOURS[species] : NEUTRAL;
+  return speciesOf(mainMaterial(thing))?.colour ?? NEUTRAL;
+}
+
+/** The family of a thing's largest material, where SPECIES knows it. */
+export function thingFamily(thing: LayoutThing): string | undefined {
+  return speciesOf(mainMaterial(thing))?.family;
+}
+
+/**
+ * A form part's colour and family. Colour: its sent `colour`, else its material's species colour, else its
+ * material's family colour, else `fallback` (the thing's, as before materials were sent). Family: its material's,
+ * else the thing's main species' family.
+ */
+export function partLook(part: LayoutFormPart, thing: LayoutThing, fallback: number): { colour: number; family: string | undefined } {
+  const material = partMaterial(part);
+  const hex = colourHex(part.colour);
+  const family = material?.family ?? thingFamily(thing);
+  const colour = hex ? hexToNumber(hex)
+    : material ? speciesOf(material.species)?.colour ?? (Object.hasOwn(FAMILY_COLOURS, material.family) ? FAMILY_COLOURS[material.family] : fallback)
+    : fallback;
+  return { colour, family };
 }
 
 export interface RoomSceneInput {
@@ -203,6 +326,11 @@ export interface RoomSceneInput {
   youId: string;
   /** Figure geometries kept across rebuilds; without one, every figure is built afresh and freed with the scene. */
   figures?: FigureCache;
+  /**
+   * What surfaces mirror and are softly lit by (a PMREM of a studio room, RoomLayout3D's), at ENVIRONMENT_INTENSITY
+   * times each surface's `reflection`. Owned by the caller: the scene does not free it.
+   */
+  environment?: THREE.Texture;
 }
 
 const hexString = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
@@ -260,21 +388,48 @@ export const CRYSTAL_GLOW = 0x1c2633;
 class Builder {
   private materials = new Map<string, THREE.Material>();
 
-  constructor(private figures?: FigureCache) {}
+  constructor(private figures?: FigureCache, private environment?: THREE.Texture) {}
 
-  material(colour: number, options: { opacity?: number; emissive?: number } = {}): THREE.Material {
-    const key = `${colour}:${options.opacity ?? 1}:${options.emissive ?? 0}`;
+  /**
+   * A surface in `colour` as its material `family` takes the light (`surfaceFor`). `opacity` and `emissive` override
+   * the family's. A see-through surface shows both its faces and casts no shadow (`userData.castsShadow`).
+   */
+  material(colour: number, options: { opacity?: number; emissive?: number; family?: string } = {}): THREE.Material {
+    const surface = surfaceFor(options.family);
+    const opacity = options.opacity ?? surface.opacity;
+    const key = `${colour}:${opacity ?? 1}:${options.emissive ?? 0}:${options.family ?? ""}`;
     let material = this.materials.get(key);
     if (!material) {
-      material = new THREE.MeshStandardMaterial({
+      const params: THREE.MeshStandardMaterialParameters = {
         color: colour,
-        roughness: 0.8,
-        metalness: 0.05,
-        transparent: options.opacity !== undefined,
-        opacity: options.opacity ?? 1,
-        emissive: options.emissive ?? 0x000000,
-        depthWrite: options.opacity === undefined,
-      });
+        roughness: surface.roughness,
+        metalness: surface.metalness,
+        transparent: opacity !== undefined,
+        opacity: opacity ?? 1,
+        emissive: options.emissive ?? (surface.glow ? new THREE.Color(colour).multiplyScalar(surface.glow) : 0x000000),
+        depthWrite: opacity === undefined,
+        envMap: this.environment ?? null,
+        envMapIntensity: ENVIRONMENT_INTENSITY * (surface.reflection ?? 1),
+      };
+      material = surface.clearcoat || surface.sheen
+        ? new THREE.MeshPhysicalMaterial({
+          ...params,
+          clearcoat: surface.clearcoat ?? 0,
+          clearcoatRoughness: surface.clearcoatRoughness ?? 0,
+          sheen: surface.sheen ?? 0,
+          sheenRoughness: 0.8,
+          sheenColor: new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.3),
+        })
+        : new THREE.MeshStandardMaterial(params);
+      if (surface.opacity !== undefined && options.opacity === undefined) {
+        material.side = THREE.DoubleSide;
+        // A see-through thing's base lies in the floor's (or shelf's) plane and shows through it: pulled a hair toward
+        // the camera, it wins over that face instead of striping with it. The selection glow's offset is larger still.
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = -1;
+        material.polygonOffsetUnits = -1;
+      }
+      material.userData.castsShadow = opacity === undefined;
       this.materials.set(key, material);
     }
     return material;
@@ -304,9 +459,10 @@ class Builder {
     const key = crystal ? "figure-crystal" : "figure";
     let material = this.materials.get(key);
     if (!material) {
+      const lit = { envMap: this.environment ?? null, envMapIntensity: ENVIRONMENT_INTENSITY };
       material = crystal
-        ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: CRYSTAL_ROUGHNESS, metalness: 0, flatShading: true, emissive: CRYSTAL_GLOW })
-        : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05 });
+        ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: CRYSTAL_ROUGHNESS, metalness: 0, flatShading: true, emissive: CRYSTAL_GLOW, ...lit })
+        : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05, ...lit });
       this.materials.set(key, material);
     }
     return material;
@@ -362,7 +518,8 @@ const centre = (b: Bounds) => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2] as const;
 function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
   const { thing, bounds: b } = placed;
   const colour = thingColour(thing);
-  const surface = builder.material(colour);
+  const family = thingFamily(thing);
+  const surface = builder.material(colour, { family });
   const w = b.x1 - b.x0;
   const d = b.y1 - b.y0;
   const h = b.z1 - b.z0;
@@ -397,7 +554,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
     }
     case "shelf": {
       const shelves: THREE.Mesh[] = [builder.box(b, surface, "body")];
-      const line = builder.material(new THREE.Color(colour).multiplyScalar(0.55).getHex());
+      const line = builder.material(new THREE.Color(colour).multiplyScalar(0.55).getHex(), { family });
       for (let z = b.z0 + 0.35; z < b.z1 - 0.1; z += 0.35) {
         shelves.push(
           builder.box({ x0: b.x0 - 0.008, x1: b.x1 + 0.008, y0: b.y0 - 0.008, y1: b.y1 + 0.008, z0: z, z1: z + 0.02 }, line, "shelf"),
@@ -412,7 +569,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
       const my = thinX ? d * 0.12 : -0.006;
       const mz = h * 0.12;
       return [
-        builder.box(b, builder.material(FRAME_COLOUR), "frame"),
+        builder.box(b, builder.material(FRAME_COLOUR, { family: "wood" }), "frame"),
         builder.box({ x0: b.x0 + mx, x1: b.x1 - mx, y0: b.y0 + my, y1: b.y1 - my, z0: b.z0 + mz, z1: b.z1 - mz }, surface, "picture"),
       ];
     }
@@ -426,7 +583,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
       const knob: LayoutVector = alongX
         ? [b.x0 + w * 0.85, cy + (cy > 0 ? -1 : 1) * (d / 2 + 0.03), knobZ]
         : [cx + (cx > 0 ? -1 : 1) * (w / 2 + 0.03), b.y0 + d * 0.85, knobZ];
-      return [builder.box(b, surface, "leaf"), builder.sphere(knob, 0.03, builder.material(0xc0b080), "knob")];
+      return [builder.box(b, surface, "leaf"), builder.sphere(knob, 0.03, builder.material(SPECIES.brass.colour, { family: "metal" }), "knob")];
     }
     case "flat":
       return [builder.box({ ...b, z1: b.z0 + Math.min(h, 0.05) }, surface, "block")];
@@ -437,7 +594,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
 
 /** Custom native world shapes stay in their supplied frame. */
 function collisionMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
-  const material = builder.material(thingColour(placed.thing));
+  const material = builder.material(thingColour(placed.thing), { family: thingFamily(placed.thing) });
   return placed.footprints.map((f) => f.type === "circle"
     ? builder.sphere([f.cx, f.cy, (f.bounds.z0 + f.bounds.z1) / 2], f.r, material, "sphere")
     : builder.box(f.bounds, material, "box"));
@@ -499,16 +656,14 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   return group;
 }
 
-export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInput): RoomScene {
-  const builder = new Builder(figures);
+export function buildRoomScene({ layout, placed, youId, figures, environment }: RoomSceneInput): RoomScene {
+  const builder = new Builder(figures, environment);
   const [w, d] = layout.size;
   const root = new THREE.Group();
   const exits: THREE.Object3D[] = [];
 
-  root.add(new THREE.HemisphereLight(0xffffff, 0x444450, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-  sun.position.set(w * 0.4, -d * 0.6, 6);
-  root.add(sun);
+  root.add(new THREE.HemisphereLight(0xffffff, 0x444450, HEMISPHERE_INTENSITY));
+  root.add(keyLight(layout.size));
 
   const floor = builder.box({ x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -0.02, z1: 0 }, builder.material(FLOOR_COLOUR), "floor");
   floor.userData.finish = layout.finishes?.floor;
@@ -586,13 +741,12 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
         const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
         if (p.thing.form_parts?.length) {
           const surface = thingColour(p.thing);
-          const wood = builder.material(surface);
-          const face = builder.material(new THREE.Color(surface).multiplyScalar(0.78).getHex());
           for (const part of p.thing.form_parts) {
-            const { role, fitting, colour } = part;
-            const hex = colourHex(colour);
-            const material = hex ? builder.material(hexToNumber(hex)) : fitting ? face : wood;
-            const mesh = new THREE.Mesh(partGeometry(part), material);
+            const { role, fitting } = part;
+            const look = partLook(part, p.thing, surface);
+            // A drawer's face without a colour of its own is a shade darker than what it is made of, so it shows.
+            const colour = fitting && !colourHex(part.colour) ? new THREE.Color(look.colour).multiplyScalar(0.78).getHex() : look.colour;
+            const mesh = new THREE.Mesh(partGeometry(part), builder.material(colour, { family: look.family }));
             mesh.userData.part = fitting?.name ?? role ?? "form";
             mesh.matrixAutoUpdate = false;
             placePart(mesh, part);
@@ -602,7 +756,7 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
             if (role && p.thing.lifetime) mesh.userData.inspect = [p.thing.id, p.thing.lifetime, role];
             group.add(mesh);
           }
-        } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing)), "box"));
+        } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing), { family: thingFamily(p.thing) }), "box"));
         else for (const mesh of thingMeshes(builder, local)) group.add(mesh);
         group.quaternion.copy(bodyQuaternion(pose));
         group.position.fromArray(pose.centre_m);
@@ -632,8 +786,62 @@ export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInpu
     markers.set(id, marker);
   }
   root.add(rings);
+  // Things and people cast shadows and take them; the floor and walls take them. The ceiling casts none (from your
+  // eyes it would shade the whole room), nor does anything see-through.
+  floor.receiveShadow = true;
+  for (const wall of Object.values(walls)) wall.traverse((object) => { object.receiveShadow = true; });
+  for (const group of things.values()) {
+    group.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      object.receiveShadow = true;
+      object.castShadow = (object.material as THREE.Material).userData.castsShadow !== false;
+    });
+  }
   root.updateMatrixWorld(true);
   return { root, walls, ceiling, exits, things, labelPoints, heads, markers };
+}
+
+/** The sky's share of the light; the key light's; and how much the room's reflections (`RoomSceneInput.environment`) add. */
+export const HEMISPHERE_INTENSITY = 0.35;
+export const KEY_LIGHT_INTENSITY = 1.6;
+export const ENVIRONMENT_INTENSITY = 0.5;
+/** Shadow map texels on a side, and how many texels wide a shadow's soft edge is. */
+export const SHADOW_MAP_SIZE = 2048;
+const SHADOW_SOFTNESS = 3;
+
+/**
+ * The key light, high over the room's south-east, casting soft shadows. Its shadow camera is fitted round the
+ * room's box as the light sees it, so the shadow map's texels are spent on the room and nothing in it is cut off.
+ */
+export function keyLight(size: LayoutVector): THREE.DirectionalLight {
+  const [w, d, h] = size;
+  const sun = new THREE.DirectionalLight(0xffffff, KEY_LIGHT_INTENSITY);
+  sun.position.set(w * 0.4, -d * 0.6, Math.max(6, h + 2));
+  sun.castShadow = true;
+  // The shadow camera looks from the light at the room's middle (its target, the origin), with three's default up.
+  const view = new THREE.Matrix4().lookAt(sun.position, new THREE.Vector3(), THREE.Object3D.DEFAULT_UP)
+    .setPosition(sun.position).invert();
+  const box = new THREE.Box3();
+  for (const x of [-w / 2, w / 2]) for (const y of [-d / 2, d / 2]) for (const z of [0, h]) {
+    box.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(view));
+  }
+  const margin = 0.1;
+  const camera = sun.shadow.camera;
+  camera.left = box.min.x - margin;
+  camera.right = box.max.x + margin;
+  camera.bottom = box.min.y - margin;
+  camera.top = box.max.y + margin;
+  // The camera looks down its -z: the room lies between -max.z and -min.z in front of it.
+  camera.near = Math.max(0.05, -box.max.z - margin);
+  camera.far = -box.min.z + margin;
+  camera.updateProjectionMatrix();
+  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  sun.shadow.radius = SHADOW_SOFTNESS;
+  const texel = Math.max(camera.right - camera.left, camera.top - camera.bottom) / SHADOW_MAP_SIZE;
+  // Pushed off each surface by a texel and a half along its normal, so a face never shades itself (acne).
+  sun.shadow.normalBias = texel * 1.5;
+  sun.shadow.bias = -0.0002;
+  return sun;
 }
 
 /** A figure shorter than this on screen, CSS pixels, gets its floor ring; from MARKER_FULL_PX down the ring is at full strength. */

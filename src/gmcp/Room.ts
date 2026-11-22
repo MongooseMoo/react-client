@@ -100,7 +100,22 @@ export interface LayoutFormPart {
   label?: string;
   /** MOO palette entry for this part. The renderer reads its validated hex value. */
   colour?: unknown;
+  /** What the part is made of, `{species, family}`. Read through `partMaterial`; anything malformed there is ignored. */
+  material?: unknown;
   fitting?: LayoutFitting;
+}
+
+/** A part's material: its species (`steel`, `oak`) and that species' family (`metal`, `wood`). */
+export interface LayoutPartMaterial {
+  species: string;
+  family: string;
+}
+
+/** A part's `material` when it is well formed (two non-empty names), else undefined: the part is drawn without it. */
+export function partMaterial(part: LayoutFormPart): LayoutPartMaterial | undefined {
+  const m = part.material;
+  return record(m) && typeof m.species === "string" && m.species.trim() !== "" && typeof m.family === "string" && m.family.trim() !== ""
+    ? { species: m.species, family: m.family } : undefined;
 }
 
 export interface LayoutBody {
