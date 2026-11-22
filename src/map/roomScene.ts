@@ -4,6 +4,7 @@ import { type Footprint, figureParams } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
 import { FigureCache, figureMesh, headOutline } from "./figureMesh";
+import { CREASE_DEGREES, extrudeGeometry, loftGeometry, roundedBoxGeometry, sweepGeometry } from "./partShapes";
 
 export { FigureCache };
 import {
@@ -23,16 +24,21 @@ import {
 /** Steps round a round part. */
 const PART_SEGMENTS = 32;
 /** A turn in a round part's outline sharper than this is drawn as an edge, not shaded round. */
-const CREASE = Math.cos((40 * Math.PI) / 180);
+const CREASE = Math.cos((CREASE_DEGREES * Math.PI) / 180);
 
 /**
  * A form part's surface in its unit box (-0.5 to 0.5 on each axis, its axis along z), for the mesh's
- * basis-and-size matrix to stretch into place: a box, an open box with floor and four walls, or a round part's
- * outline (`partProfile`) revolved about z.
+ * basis-and-size matrix to stretch into place: a box, a box with rounded edges, an open box with floor and four
+ * walls, a round part's outline (`partProfile`) revolved about z (or the `arc` of it), an extrude, a sweep or a
+ * loft (partShapes.ts). `userData.open` marks an open skin, seen from both sides.
  */
 export function partGeometry(part: LayoutFormPart): THREE.BufferGeometry {
+  if (part.shape === "extrude") return extrudeGeometry(part);
+  if (part.shape === "sweep") return sweepGeometry(part);
+  if (part.shape === "loft") return loftGeometry(part);
+  if (part.shape === "box" && part.round) return roundedBoxGeometry(part);
   const profile = partProfile(part);
-  if (profile) return revolve(profile);
+  if (profile) return revolve(profile, part.arc);
   if (!part.wall) return new THREE.BoxGeometry(1, 1, 1);
   const tx = part.wall[0] / part.size[0], ty = part.wall[1] / part.size[1], tz = part.wall[2] / part.size[2];
   const slabs = ([
@@ -120,9 +126,25 @@ export function animateJoints(
   return () => cancel(id);
 }
 
-/** `[rx, ry, z]` points revolved about z, with an elliptic cross-section where rx and ry differ. */
-function revolve(profile: Array<[number, number, number]>): THREE.BufferGeometry {
-  // A sharp turn keeps an edge: its point is repeated so each side gets its own normal.
+/**
+ * `[rx, ry, z]` points revolved about z, with an elliptic cross-section where rx and ry differ: all the way round, or
+ * through an `arc` `[start, sweep]` radians from +x toward +y (angles on the circle the ellipse is stretched from),
+ * closed on both cut faces. The outline always begins and ends on the axis, so with the axis it bounds a cut face.
+ */
+function revolve(profile: Array<[number, number, number]>, arc?: [number, number]): THREE.BufferGeometry {
+  if (!arc) return revolveWhole(profile);
+  const [start, sweep] = arc;
+  const segments = Math.max(2, Math.ceil((PART_SEGMENTS * sweep) / (2 * Math.PI)));
+  const turned = turn(creased(profile), segments, start, sweep);
+  turned.deleteAttribute("uv");
+  const pieces = [turned, cutFace(profile, start, -1), cutFace(profile, start + sweep, 1)];
+  const geometry = mergeGeometries(pieces);
+  for (const piece of pieces) piece.dispose();
+  return geometry;
+}
+
+/** A profile with each sharp turn's point repeated, so each side of the edge gets its own normal. */
+function creased(profile: Array<[number, number, number]>): Array<[number, number, number]> {
   const path: Array<[number, number, number]> = [];
   profile.forEach((point, i) => {
     path.push(point);
@@ -132,14 +154,60 @@ function revolve(profile: Array<[number, number, number]>): THREE.BufferGeometry
     const la = Math.hypot(a[0], a[1]), lb = Math.hypot(b[0], b[1]);
     if (la > 0 && lb > 0 && (a[0] * b[0] + a[1] * b[1]) / (la * lb) < CREASE) path.push(point);
   });
-  // LatheGeometry turns about y; a quarter turn about x puts that axis on z with the height kept.
-  const geometry = new THREE.LatheGeometry(path.map(([r, , z]) => new THREE.Vector2(r / 2, z)), PART_SEGMENTS).rotateX(Math.PI / 2);
+  return path;
+}
+
+/** `path` turned about z through `length` radians from `start` (from +x toward +y) in `segments` steps, stretched to its ellipses. */
+function turn(path: Array<[number, number, number]>, segments: number, start = 0, length = 2 * Math.PI): THREE.BufferGeometry {
+  // LatheGeometry turns about y from its +z; a quarter turn about x puts that axis on z with the height kept, and its
+  // angle then runs from +y: a quarter turn behind ours.
+  const geometry = new THREE.LatheGeometry(path.map(([r, , z]) => new THREE.Vector2(r / 2, z)), segments, start + Math.PI / 2, length)
+    .rotateX(Math.PI / 2);
   const position = geometry.getAttribute("position");
   for (let k = 0; k < position.count; k++) {
     const [rx, ry] = path[k % path.length];
     if (rx > 0) position.setY(k, (position.getY(k) * ry) / rx);
   }
   geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The flat face where an arc is cut at `angle`: the profile with the axis bounding it, facing back round the turn
+ * (`facing` -1, the start) or on round it (1, the end).
+ */
+function cutFace(profile: Array<[number, number, number]>, angle: number, facing: -1 | 1): THREE.BufferGeometry {
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const points = profile
+    .map(([rx, ry, z]) => ({ at: new THREE.Vector3((rx / 2) * cos, (ry / 2) * sin, z), flat: new THREE.Vector2(Math.hypot(rx * cos, ry * sin) / 2, z) }))
+    .filter((p, i, all) => p.flat.distanceTo(all[(i + 1) % all.length].flat) > 1e-9);
+  const outward = new THREE.Vector3(-sin, cos, 0).multiplyScalar(facing);
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  for (const triangle of THREE.ShapeUtils.triangulateShape(points.map((p) => p.flat), [])) {
+    let [a, b, c] = triangle.map((i) => points[i].at);
+    n.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a));
+    if (n.dot(outward) < 0) [b, c] = [c, b];
+    n.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)).normalize();
+    for (const p of [a, b, c]) {
+      positions.push(p.x, p.y, p.z);
+      normals.push(n.x, n.y, n.z);
+    }
+  }
+  const face = new THREE.BufferGeometry();
+  face.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  face.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  face.setIndex(positions.map((_, i) => i).slice(0, positions.length / 3));
+  return face;
+}
+
+/** `[rx, ry, z]` points revolved all the way about z, with an elliptic cross-section where rx and ry differ. */
+function revolveWhole(profile: Array<[number, number, number]>): THREE.BufferGeometry {
+  // A sharp turn keeps an edge: its point is repeated so each side gets its own normal.
+  const path = creased(profile);
+  // Its seam where it always was (LatheGeometry's own start).
+  const geometry = turn(path, PART_SEGMENTS, -Math.PI / 2);
   // The first and last rings of the turn are the same points: shade them alike so no seam shows.
   const normal = geometry.getAttribute("normal");
   const seam = new THREE.Vector3(), other = new THREE.Vector3();
@@ -392,12 +460,13 @@ class Builder {
 
   /**
    * A surface in `colour` as its material `family` takes the light (`surfaceFor`). `opacity` and `emissive` override
-   * the family's. A see-through surface shows both its faces and casts no shadow (`userData.castsShadow`).
+   * the family's. A see-through surface shows both its faces and casts no shadow (`userData.castsShadow`);
+   * `doubleSided` shows both faces of an open skin, whose inside is seen through its openings.
    */
-  material(colour: number, options: { opacity?: number; emissive?: number; family?: string } = {}): THREE.Material {
+  material(colour: number, options: { opacity?: number; emissive?: number; family?: string; doubleSided?: boolean } = {}): THREE.Material {
     const surface = surfaceFor(options.family);
     const opacity = options.opacity ?? surface.opacity;
-    const key = `${colour}:${opacity ?? 1}:${options.emissive ?? 0}:${options.family ?? ""}`;
+    const key = `${colour}:${opacity ?? 1}:${options.emissive ?? 0}:${options.family ?? ""}:${options.doubleSided ? 2 : 1}`;
     let material = this.materials.get(key);
     if (!material) {
       const params: THREE.MeshStandardMaterialParameters = {
@@ -421,10 +490,11 @@ class Builder {
           sheenColor: new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.3),
         })
         : new THREE.MeshStandardMaterial(params);
-      if (surface.opacity !== undefined && options.opacity === undefined) {
+      if (options.doubleSided || (surface.opacity !== undefined && options.opacity === undefined)) {
         material.side = THREE.DoubleSide;
-        // A see-through thing's base lies in the floor's (or shelf's) plane and shows through it: pulled a hair toward
-        // the camera, it wins over that face instead of striping with it. The selection glow's offset is larger still.
+        // A see-through thing's base, or an open skin's inside, may lie in the floor's (or a shelf's) plane: pulled a
+        // hair toward the camera, it wins over that face instead of striping with it. The selection glow's offset is
+        // larger still.
         material.polygonOffset = true;
         material.polygonOffsetFactor = -1;
         material.polygonOffsetUnits = -1;
@@ -746,7 +816,10 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
             const look = partLook(part, p.thing, surface);
             // A drawer's face without a colour of its own is a shade darker than what it is made of, so it shows.
             const colour = fitting && !colourHex(part.colour) ? new THREE.Color(look.colour).multiplyScalar(0.78).getHex() : look.colour;
-            const mesh = new THREE.Mesh(partGeometry(part), builder.material(colour, { family: look.family }));
+            const geometry = partGeometry(part);
+            // An open skin (a loft with an opening and no wall) shows its inside through the opening.
+            const material = builder.material(colour, { family: look.family, doubleSided: geometry.userData.open === true });
+            const mesh = new THREE.Mesh(geometry, material);
             mesh.userData.part = fitting?.name ?? role ?? "form";
             mesh.matrixAutoUpdate = false;
             placePart(mesh, part);

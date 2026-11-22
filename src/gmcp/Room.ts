@@ -76,7 +76,13 @@ export interface LayoutJoint {
   position: number;
 }
 
-export type LayoutPartShape ="box" | "cylinder" | "sphere" | "capsule" | "cone" | "lathe";
+export type LayoutPartShape = "box" | "cylinder" | "sphere" | "capsule" | "cone" | "lathe" | "extrude" | "sweep" | "loft";
+
+/** A loft's cross-section: `outline` (fractions of the box across x and y, anticlockwise) at height fraction `z`. */
+export interface LayoutLoftSection {
+  z: number;
+  outline: Array<[number, number]>;
+}
 
 /**
  * One authored part, in metres, relative to the centre and axes of the host's pose. Every shape fills the box
@@ -92,8 +98,30 @@ export interface LayoutFormPart {
   top?: number;
   /** Lathe only: `[r, z]` pairs revolved about the axis; r a fraction of the half-extent, z of the height from the bottom. */
   profile?: Array<[number, number]>;
-  /** Wall thickness in metres along basis 1, 2, 3: hollow. Box, cylinder, cone and lathe are open at the top. */
+  /** Wall thickness in metres along basis 1, 2, 3: hollow. Box, cylinder, cone and lathe are open at the top; a loft is a shell. */
   wall?: LayoutVector;
+  /** Box only: the edge radius, metres. */
+  round?: number;
+  /** Cylinder, cone, sphere, capsule and lathe: `[start, sweep]` radians about the axis from basis 1 toward basis 2. */
+  arc?: [number, number];
+  /** Extrude: the outline, 3 to 128 `[x, y]` fractions of the box, a simple anticlockwise polygon, through the box's height. */
+  outline?: Array<[number, number]>;
+  /** Extrude: `[inset, depth]` metres, a chamfer round the outline on both faces. */
+  bevel?: [number, number];
+  /** Sweep: the centre line, 2 to 32 `[x, y, z]` fractions of the box. */
+  path?: LayoutVector[];
+  /** Sweep: the section's half-thickness at each path point, metres (its half-width is that times `aspect`). */
+  radius?: number[];
+  /** Sweep: the section's width over its thickness (1 when absent). */
+  aspect?: number;
+  /** Sweep and loft: a curve through the points or sections instead of straight runs. */
+  smooth?: boolean;
+  /** Loft: 2 to 16 sections, `z` rising, each outline with the same number of points. */
+  sections?: LayoutLoftSection[];
+  /** Loft: which ends are closed ("both" when absent). */
+  caps?: "both" | "none" | "top" | "bottom";
+  /** Loft: openings `[s0, s1, i0, i1]`, the skin between sections s0 and s1 and points i0 to i1 (wrapping when i0 > i1). */
+  holes?: Array<[number, number, number, number]>;
   /** How the part moves. With a joint, `center` and `basis` are its rest pose and `position` says where it is now. */
   joint?: LayoutJoint;
   role?: string;
@@ -274,7 +302,78 @@ const namedTarget = (value: unknown): value is LayoutDrawerItem =>
 
 const unit = (value: unknown): value is LayoutVector => vector(value) && Math.abs(Math.hypot(...value) - 1) < 0.001;
 const fraction = (value: unknown): value is number => finite(value) && value >= 0 && value <= 1;
-const SHAPES: readonly LayoutPartShape[] = ["box", "cylinder", "sphere", "capsule", "cone", "lathe"];
+const SHAPES: readonly LayoutPartShape[] = ["box", "cylinder", "sphere", "capsule", "cone", "lathe", "extrude", "sweep", "loft"];
+/** The shapes made by turning an outline about the axis, which may be cut to an `arc`. */
+const TURNED: readonly LayoutPartShape[] = ["cylinder", "sphere", "capsule", "cone", "lathe"];
+
+const fractionPair = (value: unknown): value is [number, number] => Array.isArray(value) && value.length === 2 && value.every(fraction);
+const fractionPoints = (value: unknown, least: number, most: number): value is Array<[number, number]> =>
+  Array.isArray(value) && value.length >= least && value.length <= most && value.every(fractionPair);
+
+/** Twice the signed area of a closed outline: positive when it runs anticlockwise. */
+export function outlineArea(points: Array<[number, number]>): number {
+  let twice = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x0, y0] = points[i], [x1, y1] = points[(i + 1) % points.length];
+    twice += x0 * y1 - x1 * y0;
+  }
+  return twice;
+}
+
+/** Whether no two edges of a closed outline cross or touch, other than neighbours at their shared corner. */
+export function simpleOutline(points: Array<[number, number]>): boolean {
+  const n = points.length;
+  const side = (a: number[], b: number[], c: number[]) => Math.sign((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  const within = (a: number[], b: number[], c: number[]) =>
+    Math.min(a[0], b[0]) <= c[0] && c[0] <= Math.max(a[0], b[0]) && Math.min(a[1], b[1]) <= c[1] && c[1] <= Math.max(a[1], b[1]);
+  for (let i = 0; i < n; i++) {
+    const a = points[i], b = points[(i + 1) % n];
+    if (a[0] === b[0] && a[1] === b[1]) return false;
+    for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      const c = points[j], d = points[(j + 1) % n];
+      const [s1, s2, s3, s4] = [side(a, b, c), side(a, b, d), side(c, d, a), side(c, d, b)];
+      if (s1 !== s2 && s3 !== s4) return false;
+      if ((s1 === 0 && within(a, b, c)) || (s2 === 0 && within(a, b, d)) || (s3 === 0 && within(c, d, a)) || (s4 === 0 && within(c, d, b))) return false;
+    }
+  }
+  return true;
+}
+
+const whole = (value: unknown): value is number => Number.isInteger(value);
+
+/** The fields of an extrude, sweep or loft, a box's `round` and a turned shape's `arc`, as docs/room-layout.md gives them. */
+function validShapeFields(value: Record<string, unknown>, shape: LayoutPartShape, size: LayoutVector): boolean {
+  if (value.round !== undefined && !(shape === "box" && finite(value.round) && value.round > 0 && value.round <= Math.min(...size) / 2 + 1e-9)) return false;
+  if (value.arc !== undefined && !(TURNED.includes(shape) && Array.isArray(value.arc) && value.arc.length === 2 &&
+    value.arc.every(finite) && value.arc[1] > 0 && value.arc[1] < 2 * Math.PI)) return false;
+  if (value.smooth !== undefined && typeof value.smooth !== "boolean") return false;
+  // Only a loft has a shell; an extrude or sweep is always solid.
+  if ((shape === "extrude" || shape === "sweep") && value.wall !== undefined) return false;
+  if (shape === "extrude") {
+    if (!fractionPoints(value.outline, 3, 128) || outlineArea(value.outline) <= 0 || !simpleOutline(value.outline)) return false;
+    const bevel = value.bevel;
+    return bevel === undefined || (Array.isArray(bevel) && bevel.length === 2 && bevel.every(finite) && bevel[0] >= 0 && bevel[1] >= 0 &&
+      bevel[1] <= size[2] / 2 + 1e-9);
+  }
+  if (shape === "sweep") {
+    const { path, radius, aspect } = value;
+    return Array.isArray(path) && path.length >= 2 && path.length <= 32 && path.every((p) => vector(p) && p.every(fraction)) &&
+      Array.isArray(radius) && radius.length === path.length && radius.every((r) => finite(r) && r > 0) &&
+      (aspect === undefined || (finite(aspect) && aspect > 0));
+  }
+  if (shape === "loft") {
+    const { sections, caps, holes } = value;
+    if (!Array.isArray(sections) || sections.length < 2 || sections.length > 16) return false;
+    if (!sections.every((s) => record(s) && fraction(s.z) && fractionPoints(s.outline, 3, 48) && outlineArea(s.outline) >= -1e-9)) return false;
+    const n = sections[0].outline.length;
+    if (!sections.every((s, i) => s.outline.length === n && (i === 0 || s.z > sections[i - 1].z))) return false;
+    if (caps !== undefined && !(caps === "both" || caps === "none" || caps === "top" || caps === "bottom")) return false;
+    return holes === undefined || (Array.isArray(holes) && holes.every((h) => Array.isArray(h) && h.length === 4 && h.every(whole) &&
+      h[0] >= 0 && h[0] < h[1] && h[1] < sections.length && h[2] >= 0 && h[2] < n && h[3] >= 0 && h[3] < n && h[2] !== h[3]));
+  }
+  return true;
+}
 
 function validFormPart(value: unknown): value is LayoutFormPart {
   if (!record(value) || !vector(value.center) || !vector(value.size) || !value.size.every((n) => n > 0)) return false;
@@ -283,6 +382,7 @@ function validFormPart(value: unknown): value is LayoutFormPart {
   if (shape === "cone" && !fraction(value.top)) return false;
   if (shape === "lathe" && !(Array.isArray(value.profile) && value.profile.length >= 2 &&
     value.profile.every((point: unknown) => Array.isArray(point) && point.length === 2 && point.every(fraction)))) return false;
+  if (!validShapeFields(value, shape as LayoutPartShape, value.size)) return false;
   if (value.wall !== undefined) {
     const [a, b, c] = value.size;
     const closed = shape === "sphere" || shape === "capsule";
