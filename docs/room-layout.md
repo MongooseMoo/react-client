@@ -308,6 +308,19 @@ A `box`, `cylinder`, `cone` or `lathe` is open at the top: its cavity is the sam
 draw its outside, rim and inside, so a cup or a bowl reads as hollow. A `sphere` or `capsule` is
 a closed shell (cavity `[a - 2wx, b - 2wy, c - 2wz]`, same centre); only its outside is drawn.
 
+A part may carry `material`: `{"species": "steel", "family": "metal"}`, what it is made of and that
+species' family (`$material_engine.profiles[species]["family"]`; the family's own name when the part
+names a family). The families the game has are `metal`, `glass`, `wood`, `leather`, `cloth`, `stone`,
+`ceramic`, `plastic`, `flesh`, `plant`, `earth`, `liquid` and `energy field`; the client also knows
+`ice`, `fungal_ingredient` and `grain_meal`. Dollhouse and Your eyes give each family its own surface:
+metal mirrors the room, glass is clear and glossy (see-through, both faces drawn), ceramic is glazed,
+wood is varnished, leather has a soft sheen, cloth is fully matte with a fabric sheen, stone and earth
+are rough, plastic is smooth, liquid and ice are glossy and partly clear, and an energy field glows. A
+part's colour is its `colour` when sent, else its species' colour where the client knows the species,
+else its family's colour, else the host's. A part without `material` takes the host's largest
+material's family where the client knows it. A `material` that is not an object with a non-empty
+`species` and `family` is ignored; the part is still drawn.
+
 A part that moves carries a `joint`. Its `center` and `basis` are then its rest pose:
 
 - `type`: `hinge` or `slide`.
@@ -434,8 +447,13 @@ knows: a table as a top on legs, a chair or other furniture as a seat with a bac
 native front is supplied, a bookshelf or cabinet as a tall box with shelves, a moving photograph as a framed
 picture, a TV as a dark screen, a door leaf as a door, a book or note as a flat block; anything
 else as its boxes and spheres. In 3D they are coloured by their largest material (wood and pine brown, lcd
-near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, anything
-else a neutral stone). People are figures: head, body, arms and legs sized by their height and
+near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, and the
+other common species in `SPECIES` in `src/map/roomScene.ts`; anything else a neutral stone), with that
+species' family's surface (see `material` on form parts). The room is lit by a soft sky light, a key
+light high over the south-east that casts soft shadows (things and people cast them; floor, walls,
+things and people take them; the ceiling and see-through things cast none), and a studio room that
+surfaces mirror, metal most. The shadows are redrawn only when the room or something in it changes,
+never while the view turns. People are figures: head, body, arms and legs sized by their height and
 build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
 facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`
 says, and turned by their native physical body quaternion. Where two

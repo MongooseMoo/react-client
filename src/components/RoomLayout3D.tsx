@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
@@ -119,6 +120,8 @@ interface Stage {
   placed: PlacedThing[];
   /** People's figure geometries, reused while their look is unchanged. */
   figures: FigureCache;
+  /** The studio room every surface mirrors (`RoomSceneInput.environment`), made once with the renderer. */
+  environment: THREE.Texture;
   labelObjects: Map<string, CSS2DObject>;
   /** Labels' drawn sizes (`labelSize`). */
   labelSizes: Map<string, { width: number; height: number }>;
@@ -174,6 +177,14 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x14141a);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Neutral keeps the game's colours as sent in ordinary light and rolls off highlights instead of clipping them.
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Shadows depend on the room, not the camera: redrawn only when something in it is built, moves or is hidden
+    // (`shadowMap.needsUpdate` below), not on every turn of the view.
+    renderer.shadowMap.autoUpdate = false;
     renderer.domElement.setAttribute("aria-hidden", "true");
     frame.appendChild(renderer.domElement);
     const labels = new CSS2DRenderer();
@@ -190,6 +201,13 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
     controls.touches.TWO = null;
     const scene = new THREE.Scene();
+    // A soft studio room for metal, glass and glaze to reflect, made once in code (no downloaded picture). Given to each
+    // scene's materials (`buildRoomScene`), not set as `scene.environment`, which would override each surface's strength.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const studio = new RoomEnvironment();
+    const environment = pmrem.fromScene(studio, 0.04).texture;
+    studio.dispose();
+    pmrem.dispose();
 
     const stage: Stage = {
       renderer,
@@ -202,6 +220,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       layout: null,
       placed: [],
       figures: new FigureCache(),
+      environment,
       labelObjects: new Map(),
       labelSizes: new Map(),
       personLabels: [],
@@ -247,6 +266,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       if (stage.selection) disposeSelectionOutline(stage.selection);
       if (stage.room) disposeRoomScene(stage.room);
       stage.figures.dispose();
+      environment.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       labels.domElement.remove();
@@ -330,6 +350,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       const you = stage.room.things.get(youId);
       if (you) you.visible = mode !== "eyes";
       showSelection(stage, selectedIdRef.current);
+      stage.renderer.shadowMap.needsUpdate = true;
       stage.render();
       return;
     }
@@ -341,7 +362,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     // A door or drawer that moved swings or slides there from where it was drawn, unless motion is reduced.
     stage.stopJoints();
     const drawnJoints = previous ? jointPositions(previous) : new Map<string, number>();
-    const room = buildRoomScene({ layout, placed, youId, figures: stage.figures });
+    const room = buildRoomScene({ layout, placed, youId, figures: stage.figures, environment: stage.environment });
     stage.room = room;
     stage.layout = layout;
     stage.placed = placed;
@@ -384,9 +405,13 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     }
     showSelection(stage, selectedIdRef.current);
     // Set before the first frame, so a moving part is first drawn where it was.
-    stage.stopJoints = animateJoints(room, drawnJoints, stage.render,
+    const moved = () => {
+      stage.renderer.shadowMap.needsUpdate = true;
+      stage.render();
+    };
+    stage.stopJoints = animateJoints(room, drawnJoints, moved,
       jointSwingMs(typeof window.matchMedia === "function" ? (query) => window.matchMedia(query) : undefined));
-    stage.render();
+    moved();
     // Free the previous room only once the new one is drawn. three.js shares a
     // compiled shader between materials alike and deletes it when the last one is
     // disposed; disposing first made it recompile every shader on every rebuild,

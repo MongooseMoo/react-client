@@ -6,7 +6,7 @@ import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
 import trestle from "../map/roomLayout.trestle.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
-import { GMCPRoom, type GMCPMessageRoomInfo } from "./Room";
+import { GMCPRoom, type GMCPMessageRoomInfo, partMaterial } from "./Room";
 
 const info = (num: number) => ({ num, name: `Room ${num}`, area: "Area" }) as GMCPMessageRoomInfo;
 
@@ -90,6 +90,28 @@ describe("Room.Layout", () => {
     // The old spelling is not read.
     room.receive("Layout", { ...sampleLayout(), things: [{ ...trestle, form_parts: undefined, form_boxes: trestle.form_parts }] });
     expect(useRoomStore.getState().roomLayout?.things[0].form_parts).toBeUndefined();
+  });
+
+  it("reads a part's material, and keeps a part whose material is malformed, drawn without it", () => {
+    const base = { center: [0, 0, 0], size: [0.1, 0.1, 0.2], shape: "box" };
+    const steel = { ...base, material: { species: "steel", family: "metal" } };
+    const malformed = [
+      { ...base, material: "steel" },
+      { ...base, material: { species: "steel" } },
+      { ...base, material: { species: "", family: "metal" } },
+      { ...base, material: { species: "steel", family: 3 } },
+      { ...base, material: ["steel", "metal"] },
+      { ...base, material: null },
+    ];
+    room.receive("Layout", { ...sampleLayout(), things: [{ ...trestle, form_parts: [steel, ...malformed, base] }] });
+    const parts = useRoomStore.getState().roomLayout?.things[0].form_parts ?? [];
+    // Every part is kept: a malformed material never drops the list.
+    expect(parts).toHaveLength(malformed.length + 2);
+    expect(partMaterial(parts[0])).toEqual({ species: "steel", family: "metal" });
+    for (const part of parts.slice(1)) expect(partMaterial(part)).toBeUndefined();
+    // "energy field" is a family the game has, with a space in its name.
+    expect(partMaterial({ ...base, shape: "box", center: [0, 0, 0], size: [1, 1, 1], material: { species: "energy field", family: "energy field" } }))
+      .toEqual({ species: "energy field", family: "energy field" });
   });
 
   it("refreshes and clears fitted parts on native body updates for the same host incarnation", () => {

@@ -31,8 +31,13 @@ import {
   EYES_MIN_FOV,
   eyesPose,
   FigureCache,
-  MATERIAL_COLOURS,
+  FAMILY_COLOURS,
+  keyLight,
   NEUTRAL,
+  PLAIN_SURFACE,
+  SPECIES,
+  SURFACES,
+  surfaceFor,
   PERSON_COLOUR,
   panTo,
   PICK_TOLERANCE,
@@ -181,6 +186,129 @@ describe("buildRoomScene", () => {
     expect([green, black, invalid]).toEqual([0x00ff00, 0x000000, host]);
     expect(unpaintedFitting).toBe(new THREE.Color(host).multiplyScalar(0.78).getHex());
     disposeRoomScene(scene);
+  });
+
+  it("gives each part its material's surface and, without a colour of its own, its species' or family's colour", () => {
+    const layout = livingRoomLayout();
+    const part: LayoutFormPart = { shape: "box", center: [0, 0, 0], size: [1, 1, 1] };
+    layout.things = [{ ...layout.things[0], id: "#lamp", kind: "object", material: [{ species: "wood", fraction: 1 }],
+      pose: { centre_m: [0, 0, 1], dimensions_m: [1, 1, 2], body_quaternion: [1, 0, 0, 0], box: true },
+      form_parts: [
+        { ...part, material: { species: "steel", family: "metal" } },
+        { ...part, material: { species: "glass", family: "glass" } },
+        { ...part, material: { species: "unobtainium", family: "stone" } },
+        { ...part, material: { species: "steel", family: "metal" }, colour: { name: "red", hex: "#ff0000" } },
+        { ...part, material: { species: "", family: "metal" } },
+        { ...part, material: "steel" },
+        part,
+        { ...part, material: { species: "wool", family: "cloth" } },
+      ],
+    }];
+    const scene = build(layout);
+    const drawn = meshes(scene.things.get("#lamp"));
+    const surface = (mesh: THREE.Mesh) => mesh.material as THREE.MeshPhysicalMaterial;
+    const [steel, glass, unknown, red, emptySpecies, bare, none, wool] = drawn;
+    expect(colour(steel)).toBe(SPECIES.steel.colour);
+    expect(surface(steel).metalness).toBe(1);
+    expect(colour(glass)).toBe(SPECIES.glass.colour);
+    expect(surface(glass).transparent).toBe(true);
+    expect(surface(glass).side).toBe(THREE.DoubleSide);
+    // Its base, in the floor's plane, wins over the floor instead of striping with it.
+    expect(surface(glass).polygonOffset).toBe(true);
+    // A species the client does not know takes its family's colour and surface.
+    expect(colour(unknown)).toBe(FAMILY_COLOURS.stone);
+    expect(surface(unknown).roughness).toBe(SURFACES.stone.roughness);
+    // A sent colour wins over the material's; the surface is still the material's.
+    expect(colour(red)).toBe(0xff0000);
+    expect(surface(red).metalness).toBe(1);
+    // A malformed material is ignored: the part is drawn as one without, in the host's colour and family (wood).
+    for (const mesh of [emptySpecies, bare, none]) {
+      expect(colour(mesh)).toBe(SPECIES.wood.colour);
+      expect(surface(mesh).roughness).toBe(SURFACES.wood.roughness);
+    }
+    expect(surface(wool).sheen).toBe(1);
+    // Glass lets light through, so it casts no shadow; everything else does, and all take shadows.
+    expect(drawn.map((mesh) => mesh.castShadow)).toEqual([true, false, true, true, true, true, true, true]);
+    expect(drawn.every((mesh) => mesh.receiveShadow)).toBe(true);
+    disposeRoomScene(scene);
+  });
+
+  it("lets every surface and figure mirror the given environment, metal most strongly", () => {
+    const layout = livingRoomLayout();
+    const environment = new THREE.Texture();
+    layout.things = [...layout.things, { ...layout.things[0], id: "#pot", kind: "object",
+      pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true },
+      form_parts: [{ shape: "box", center: [0, 0, 0], size: [1, 1, 1], material: { species: "steel", family: "metal" } }] }];
+    const scene = buildRoomScene({ layout, placed: placeThings(layout), youId: "#99", environment });
+    const lit = (mesh: THREE.Mesh) => mesh.material as THREE.MeshStandardMaterial;
+    const pot = lit(meshes(scene.things.get("#pot"))[0]);
+    const person = lit(meshes(scene.things.get("#9"))[0]);
+    expect(pot.envMap).toBe(environment);
+    expect(person.envMap).toBe(environment);
+    expect(pot.envMapIntensity).toBeGreaterThan(person.envMapIntensity);
+    // The scene does not free what it was given.
+    disposeRoomScene(scene);
+    expect(environment.source).toBeDefined();
+    environment.dispose();
+  });
+
+  it("gives each material family its own surface, and anything else the plain one", () => {
+    expect(surfaceFor("metal")).toEqual(expect.objectContaining({ metalness: 1 }));
+    expect(surfaceFor("metal").roughness).toBeLessThan(0.5);
+    expect(surfaceFor("glass").opacity).toBeLessThan(1);
+    expect(surfaceFor("glass").roughness).toBeLessThan(0.1);
+    expect(surfaceFor("ceramic").clearcoat).toBeGreaterThan(0.5);
+    expect(surfaceFor("wood").clearcoat).toBeGreaterThan(0);
+    expect(surfaceFor("leather").sheen).toBeGreaterThan(0);
+    expect(surfaceFor("metal").reflection).toBeGreaterThan(1);
+    expect(surfaceFor("cloth")).toEqual(expect.objectContaining({ roughness: 0.95, sheen: 1 }));
+    expect(surfaceFor("stone").roughness).toBeGreaterThan(0.8);
+    expect(surfaceFor("liquid").roughness).toBeLessThan(0.1);
+    expect(surfaceFor("energy field").glow).toBeGreaterThan(0);
+    expect(surfaceFor(undefined)).toBe(PLAIN_SURFACE);
+    expect(surfaceFor("toString")).toBe(PLAIN_SURFACE);
+    // Every family has a colour to fall back to, and every listed species a known family.
+    expect(Object.keys(FAMILY_COLOURS).sort()).toEqual(Object.keys(SURFACES).sort());
+    for (const { family } of Object.values(SPECIES)) expect(Object.keys(SURFACES)).toContain(family);
+  });
+
+  it("grounds things in shadow: things and people cast and take shadows, the floor and walls take them, the ceiling casts none", () => {
+    const scene = build(livingRoomLayout());
+    const thingMeshes = [...scene.things.values()].flatMap((group) => meshes(group));
+    expect(thingMeshes.length).toBeGreaterThan(5);
+    expect(thingMeshes.every((mesh) => mesh.castShadow && mesh.receiveShadow)).toBe(true);
+    // The person figures among them.
+    expect(meshes(scene.things.get("#9"))[0].castShadow).toBe(true);
+    const floor = scene.root.children.find((child) => child.userData.part === "floor") as THREE.Mesh;
+    expect(floor.receiveShadow).toBe(true);
+    expect(floor.castShadow).toBe(false);
+    expect(Object.values(scene.walls).flatMap((wall) => meshes(wall)).every((mesh) => mesh.receiveShadow && !mesh.castShadow)).toBe(true);
+    expect(scene.ceiling.castShadow).toBe(false);
+    const lights = scene.root.children.filter((child): child is THREE.DirectionalLight => child instanceof THREE.DirectionalLight);
+    expect(lights).toHaveLength(1);
+    expect(lights[0].castShadow).toBe(true);
+    disposeRoomScene(scene);
+  });
+
+  it("fits the key light's shadow camera round the whole room, floor to ceiling", () => {
+    for (const size of [[4, 3, 2.4], [20, 12, 6], [1, 30, 3]] as Array<[number, number, number]>) {
+      const sun = keyLight(size);
+      const camera = sun.shadow.camera;
+      camera.position.copy(sun.position);
+      camera.lookAt(new THREE.Vector3());
+      camera.updateMatrixWorld(true);
+      const [w, d, h] = size;
+      for (const x of [-w / 2, w / 2]) for (const y of [-d / 2, d / 2]) for (const z of [0, h]) {
+        const p = new THREE.Vector3(x, y, z).project(camera);
+        expect(Math.abs(p.x)).toBeLessThan(1);
+        expect(Math.abs(p.y)).toBeLessThan(1);
+        expect(Math.abs(p.z)).toBeLessThan(1);
+      }
+      // A texel and a half of normal bias: small against the room.
+      expect(sun.shadow.normalBias).toBeGreaterThan(0);
+      expect(sun.shadow.normalBias).toBeLessThan(0.05);
+      sun.dispose();
+    }
   });
 
   it("keeps each authored edge and role through a sheared part and a translated host", () => {
@@ -442,9 +570,9 @@ describe("buildRoomScene", () => {
   it("colours things by their largest material, people without appearance green and you blue", () => {
     const scene = build(livingRoomLayout());
     const first = (id: string) => colour(meshes(scene.things.get(id))[0]);
-    expect(first("#1")).toBe(MATERIAL_COLOURS.wood);
-    expect(first("#2")).toBe(MATERIAL_COLOURS.cotton);
-    expect(colour(meshes(scene.things.get("#4"))[1])).toBe(MATERIAL_COLOURS.paper);
+    expect(first("#1")).toBe(SPECIES.wood.colour);
+    expect(first("#2")).toBe(SPECIES.cotton.colour);
+    expect(colour(meshes(scene.things.get("#4"))[1])).toBe(SPECIES.paper.colour);
     expect(first("#8")).toBe(NEUTRAL);
     expect(figureColours("#99", scene)).toEqual([YOU_COLOUR]);
     expect(figureColours("#9", scene)).toEqual([PERSON_COLOUR]);
@@ -666,9 +794,9 @@ describe("buildRoomScene", () => {
       "west",
     ]);
     const first = (id: string) => colour(meshes(scene.things.get(id))[0]);
-    expect(first("#36230")).toBe(MATERIAL_COLOURS.steel); // keyboard stand
-    expect(first("#29293")).toBe(MATERIAL_COLOURS.cotton); // blue sofa
-    expect(first("#29617")).toBe(MATERIAL_COLOURS.wood); // coffee table: pine is a wood
+    expect(first("#36230")).toBe(SPECIES.steel.colour); // keyboard stand
+    expect(first("#29293")).toBe(SPECIES.cotton.colour); // blue sofa
+    expect(first("#29617")).toBe(SPECIES.wood.colour); // coffee table: pine is a wood
     expect(first("#29972")).toBe(NEUTRAL); // weather station: no material
     expect(figureColours("#2", scene)).toEqual([YOU_COLOUR]);
   });
