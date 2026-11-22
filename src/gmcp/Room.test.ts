@@ -87,6 +87,41 @@ describe("Room.Layout", () => {
       { ...door.joint, position: 2 },
       { ...drawer.joint, position: undefined },
     ]) expect(parts([door, { ...base, shape: "box", joint }])).toBeUndefined();
+    // The newer shapes and fields.
+    const square = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const newer = [
+      { ...base, shape: "box", round: 0.05 },
+      { ...base, shape: "cylinder", arc: [0, Math.PI] },
+      { ...base, shape: "sphere", wall: [0.01, 0.01, 0.01], arc: [5, 1] },
+      { ...base, shape: "extrude", outline: [[0, 0], [1, 0], [0.5, 1]], bevel: [0.01, 0.1] },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5], [1, 0.5, 0.5]], radius: [0.02, 0.01], aspect: 2, smooth: true },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: square }], caps: "none", holes: [[0, 1, 3, 1]], wall: [0.01, 0.01, 0.01] },
+    ];
+    expect(parts(newer)).toEqual(newer);
+    for (const bad of [
+      { ...base, shape: "box", round: 0.06 }, // more than half the shortest side
+      { ...base, shape: "cylinder", round: 0.01 },
+      { ...base, shape: "box", arc: [0, 1] },
+      { ...base, shape: "cone", top: 0, arc: [0, 2 * Math.PI] },
+      { ...base, shape: "lathe", profile: [[0.5, 0], [1, 1]], arc: [0, 0] },
+      { ...base, shape: "extrude" },
+      { ...base, shape: "extrude", outline: [[0, 0], [0.5, 1], [1, 0]] }, // clockwise
+      { ...base, shape: "extrude", outline: [[0, 0], [1, 1], [1, 0], [0, 1]] }, // crossing itself
+      { ...base, shape: "extrude", outline: [[0, 0], [1, 0], [0.5, 1]], bevel: [0.01, 0.15] }, // deeper than half
+      { ...base, shape: "extrude", outline: [[0, 0], [1, 0], [0.5, 1]], wall: [0.01, 0.01, 0.01] },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5]], radius: [0.02] },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5], [1, 0.5, 0.5]], radius: [0.02] },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5], [1.5, 0.5, 0.5]], radius: [0.02, 0.02] },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5], [1, 0.5, 0.5]], radius: [0.02, 0.02], aspect: 0 },
+      { ...base, shape: "sweep", path: [[0, 0.5, 0.5], [1, 0.5, 0.5]], radius: [0.02, 0.02], smooth: "yes" },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }] },
+      { ...base, shape: "loft", sections: [{ z: 0.5, outline: square }, { z: 0.5, outline: square }] }, // not rising
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: square.slice(0, 3) }] },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: [...square].reverse() }] },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: square }], caps: "sides" },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: square }], holes: [[0, 2, 0, 1]] },
+      { ...base, shape: "loft", sections: [{ z: 0, outline: square }, { z: 1, outline: square }], holes: [[0, 1, 2, 2]] },
+    ]) expect(parts([good[0], bad])).toBeUndefined();
     // The old spelling is not read.
     room.receive("Layout", { ...sampleLayout(), things: [{ ...trestle, form_parts: undefined, form_boxes: trestle.form_parts }] });
     expect(useRoomStore.getState().roomLayout?.things[0].form_parts).toBeUndefined();

@@ -289,7 +289,7 @@ the part's box in metres. Each corresponding `basis` vector (a unit column)
 points along that side in host-local coordinates. A builder can change the parts
 by choosing a different construction in `@autoform`. Anyone watching receives the new parts.
 
-Every part has a `shape`: `box`, `cylinder`, `sphere`, `capsule`, `cone` or `lathe`.
+Every part has a `shape`: `box`, `cylinder`, `sphere`, `capsule`, `cone`, `lathe`, `extrude`, `sweep` or `loft`.
 Each shape fills its box. Its axis is basis 3, from `-size[2]/2` (bottom) to
 `+size[2]/2` (top). A round shape's cross-section is an ellipse `size[0]` by `size[1]` across.
 
@@ -301,6 +301,43 @@ Each shape fills its box. Its axis is basis 3, from `-size[2]/2` (bottom) to
   fraction of the half-extent (0 to 1, scaled by `size[0]/2` and `size[1]/2`); `z` is the height
   fraction from the bottom (0 to 1). The client draws it from bottom to top and closes an end
   whose radius is not 0.
+- `extrude`: `outline`, 3 to 128 `[x, y]` fractions of the box (0 the low face, 1 the high),
+  a simple anticlockwise polygon, carried through the box's whole height (along basis 3). Optional
+  `bevel` `[inset, depth]`, metres: each face is the outline moved in by `inset`, joined by a
+  chamfer to the full outline `depth` in from that face (`depth` at most half the height). Where
+  the outline is too narrow for the inset, the client insets it as far as it stays a simple
+  outline: a blade whose inset reaches its middle, with `depth` half its thickness, ends in a sharp
+  edge all round.
+- `sweep`: `path`, 2 to 32 `[x, y, z]` fractions of the box, and `radius`, one value per point,
+  metres: half the section's thickness there; `aspect` (default 1) is its width over its thickness,
+  so its half-width is `radius * aspect`. The width lies across the path in the x-y plane (level)
+  wherever the path is not upright, and never flips from one point to the next. With `smooth` true
+  the path is a curve through the points (centripetal Catmull-Rom), the radius changing evenly
+  between them; otherwise it runs straight between points and the section turns about each joint,
+  so a bend is rounded on its outside. Each end is closed round: half an ellipsoid reaching
+  `radius` past the end along the path. The box is the tube's bounds; a smooth curve may bulge a
+  little past it.
+- `loft`: `sections`, 2 to 16 of `{"z": fraction, "outline": [[x, y], ...]}`, z rising, every
+  outline the same number of points (3 to 48) and anticlockwise; point i of each section is joined
+  to point i of the next, in straight lines or, with `smooth` true, curves through the sections.
+  `caps` (`both` when absent, `none`, `top`, `bottom`) says which end outlines are closed. `holes`
+  lists openings `[s0, s1, i0, i1]` (zero-based): the skin between sections s0 and s1 and between
+  points i0 and i1 is left out, wrapping past the last point when i0 > i1 (arm, neck and face
+  openings). With `wall` the loft is a shell that thick, set in from its skin, with every opening
+  and open end edged; without a wall a loft with an opening or an open end is a bare skin, drawn
+  from both sides.
+- A `box` may carry `round`, metres: its edges and corners are rounded to that radius (at most half
+  its shortest side). With `wall` as well it is open at the top, and its cavity's edges are
+  rounded to `round` less the wall (square when the wall is thicker).
+- A `cylinder`, `cone`, `sphere`, `capsule` or `lathe` may carry `arc` `[start, sweep]`, radians
+  about its axis from basis 1 toward basis 2, `sweep` between 0 and a whole turn (exclusive). Only
+  that part of the turn is drawn, and its two cut faces are closed. For an elliptic section the
+  angles are those of the circle the ellipse is stretched from, so an arc keeps `sweep / 2π` of the
+  shape's volume. With `wall` it is a curved plate: a `sphere` or `capsule` shell (a visor, a
+  pauldron) shows its inside and its cut edges; an open-topped shape keeps its cavity.
+
+The shapes are shaded round where their surface turns by less than 40 degrees between neighbouring
+faces and drawn with an edge where it turns more.
 
 An optional `wall` `[wx, wy, wz]`, metres along basis 1, 2 and 3, makes the part hollow.
 A `box`, `cylinder`, `cone` or `lathe` is open at the top: its cavity is the same shape
@@ -341,11 +378,18 @@ asked for in the system settings, it is drawn at once in its new place.
 
 A list holding any part the client cannot draw (no or unknown `shape`, a cone without `top`, a lathe
 without at least two `[r, z]` pairs in 0 to 1, a wall as thick as its part, a joint with an unknown
-type, an axis that is not a unit vector, a hinge without `origin`, or a `position` outside `range`)
-is not drawn at all.
+type, an axis that is not a unit vector, a hinge without `origin`, or a `position` outside `range`;
+an extrude whose outline is not 3 to 128 fractions running anticlockwise without crossing itself, or
+whose bevel is deeper than half its height; a sweep whose path is not 2 to 32 points of fractions
+with one positive radius each, or whose aspect is not positive; a loft whose sections are not 2 to
+16 rising outlines of the same 3 to 48 points, none clockwise, whose caps are another word, or whose
+holes are not whole numbers inside its sections and points; a `wall` on an extrude or a sweep; a
+`round` other than on a box, or more than half its shortest side; an `arc` other than on a turned
+shape, or not less than a whole turn; `smooth` that is not true or false) is not drawn at all.
 
 The Plan draws a thing with parts as its parts seen from above, the highest over the rest: an
-upright round part as an ellipse the size of its widest ring, any other part as its outline.
+upright round part as an ellipse the size of its widest ring, any other part as its outline (the
+convex outline round it: an arc's wedge, an extrude's outline, a sweep's tube, a loft's sections).
 It draws no table, seat or door symbol over such a thing; its parts show what it is.
 
 ### Using a fitted drawer

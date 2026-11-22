@@ -65,21 +65,32 @@ export function bodyFootprint(thing: LayoutThing): Array<[number, number]> | und
  * A round part's outline from bottom to top as `[rx, ry, z]` in its unit box: rx and ry the radius as a fraction of
  * the half-extent across basis 1 and 2, z from -0.5 (bottom) to 0.5 (top), closed on the axis at a solid end.
  * A hollow open part (cylinder, cone, lathe with `wall`) goes up its outside, across its rim and back down its
- * cavity. Undefined for a box.
+ * cavity. A sphere or capsule with `wall` cut to an `arc` (a curved plate) goes up its outside and back down its
+ * cavity; uncut, only its outside is drawn. Undefined for the shapes that are not turned (box, extrude, sweep, loft).
  */
 export function partProfile(part: LayoutFormPart): Array<[number, number, number]> | undefined {
   const [a, b, c] = part.size;
   const quarter = (from: number, steps = 8) => Array.from({ length: steps + 1 }, (_, i) => from + (Math.PI / 2) * (i / steps));
+  // A closed shell's cavity is the same shape [a - 2wx, b - 2wy, c - 2wz] about the same centre.
+  const shell = (outside: Array<[number, number, number]>): Array<[number, number, number]> => {
+    if (!part.wall || !part.arc) return outside;
+    const [wx, wy, wz] = part.wall;
+    const fx = (a - 2 * wx) / a, fy = (b - 2 * wy) / b, fz = (c - 2 * wz) / c;
+    return [...outside, ...outside.map(([rx, ry, z]): [number, number, number] => [rx * fx, ry * fy, z * fz]).reverse()];
+  };
   switch (part.shape) {
     case "box":
+    case "extrude":
+    case "sweep":
+    case "loft":
       return undefined;
     case "sphere":
-      return [...quarter(-Math.PI / 2), ...quarter(0).slice(1)].map((t) => [Math.cos(t), Math.cos(t), Math.sin(t) / 2]);
+      return shell([...quarter(-Math.PI / 2), ...quarter(0).slice(1)].map((t) => [Math.cos(t), Math.cos(t), Math.sin(t) / 2]));
     case "capsule": {
       // Each end cap is half an ellipsoid min(a, b)/2 high.
       const cap = Math.min(0.5, Math.min(a, b) / 2 / c);
       const bottom = quarter(0).map((t): [number, number, number] => [Math.sin(t), Math.sin(t), -0.5 + cap * (1 - Math.cos(t))]);
-      return [...bottom, ...bottom.map(([r, , z]): [number, number, number] => [r, r, -z]).reverse()];
+      return shell([...bottom, ...bottom.map(([r, , z]): [number, number, number] => [r, r, -z]).reverse()]);
     }
   }
   // Cylinder, cone and lathe: the outside from bottom to top, r and the height fraction from the bottom.
@@ -144,15 +155,11 @@ export function partFootprints(thing: LayoutThing): Array<{ part: LayoutFormPart
     const centre = add(pose.centre_m, rotate(posed.center));
     const world = ([u, v, w]: LayoutVector): LayoutVector => [0, 1, 2].map((i) =>
       centre[i] + e1[i] * u * part.size[0] + e2[i] * v * part.size[1] + e3[i] * w * part.size[2]) as LayoutVector;
-    const profile = partProfile(part);
-    const samples: LayoutVector[] = profile
-      ? profile.flatMap(([rx, ry, z]) => Array.from({ length: 32 }, (_, i): LayoutVector =>
-        [(rx / 2) * Math.cos((i * Math.PI) / 16), (ry / 2) * Math.sin((i * Math.PI) / 16), z]))
-      : [-0.5, 0.5].flatMap((u) => [-0.5, 0.5].flatMap((v) => [-0.5, 0.5].map((w): LayoutVector => [u, v, w])));
-    const points = samples.map(world);
+    const points = partSamples(part).map(world);
     const top = Math.max(...points.map((p) => p[2]));
     const upright = Math.abs(Math.abs(e3[2]) - 1) < 1e-6 && Math.abs(e1[0] * e2[0] + e1[1] * e2[1]) < 1e-6;
-    if (profile && upright) {
+    const profile = partProfile(part);
+    if (profile && upright && !part.arc) {
       const widest = Math.max(...profile.map(([r]) => r));
       const footprint: PartFootprint = { type: "ellipse", cx: centre[0], cy: centre[1],
         rx: (widest * part.size[0]) / 2, ry: (widest * part.size[1]) / 2, angle: Math.atan2(e1[1], e1[0]) };
@@ -161,6 +168,41 @@ export function partFootprints(thing: LayoutThing): Array<{ part: LayoutFormPart
     return { part, footprint: { type: "polygon", points: convexHull(points.map(([x, y]): [number, number] => [x, y])) } as PartFootprint, top };
   });
   return drawn.sort((p, q) => p.top - q.top).map(({ part, footprint }) => ({ part, footprint }));
+}
+
+/**
+ * Points on a part's surface in its unit box (-0.5 to 0.5 on each axis), enough for its outline from any side: a
+ * turned shape's rings (only the angles of its `arc`, with its axis), an extrude's outline on both faces, a sweep's
+ * path widened by its reach on each axis, a loft's sections, else the box's corners.
+ */
+export function partSamples(part: LayoutFormPart): LayoutVector[] {
+  const [a, b, c] = part.size;
+  const profile = partProfile(part);
+  if (profile) {
+    const [start, sweep] = part.arc ?? [0, 2 * Math.PI];
+    // A whole turn in 32 steps; an arc from its start to its end inclusive.
+    const steps = part.arc ? 31 : 32;
+    const angles = Array.from({ length: 32 }, (_, i) => start + (sweep * i) / steps);
+    return profile.flatMap(([rx, ry, z]) => [
+      ...angles.map((t): LayoutVector => [(rx / 2) * Math.cos(t), (ry / 2) * Math.sin(t), z]),
+      ...(part.arc ? [[0, 0, z] as LayoutVector] : []),
+    ]);
+  }
+  if (part.shape === "extrude" && part.outline) {
+    return part.outline.flatMap(([x, y]) => [-0.5, 0.5].map((z): LayoutVector => [x - 0.5, y - 0.5, z]));
+  }
+  if (part.shape === "sweep" && part.path && part.radius) {
+    const reach = Math.max(1, part.aspect ?? 1);
+    return part.path.flatMap(([x, y, z], i) => {
+      const r = (part.radius as number[])[i] * reach;
+      return [-1, 1].flatMap((sx) => [-1, 1].flatMap((sy) => [-1, 1].map((sz): LayoutVector =>
+        [x - 0.5 + (sx * r) / a, y - 0.5 + (sy * r) / b, z - 0.5 + (sz * r) / c])));
+    });
+  }
+  if (part.shape === "loft" && part.sections) {
+    return part.sections.flatMap(({ z, outline }) => outline.map(([x, y]): LayoutVector => [x - 0.5, y - 0.5, z - 0.5]));
+  }
+  return [-0.5, 0.5].flatMap((u) => [-0.5, 0.5].flatMap((v) => [-0.5, 0.5].map((w): LayoutVector => [u, v, w])));
 }
 
 /** The convex outline round `points`, anticlockwise. */
