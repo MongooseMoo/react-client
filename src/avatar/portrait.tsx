@@ -19,6 +19,8 @@ export interface PortraitProps {
   appearance: unknown;
   /** Rendered size in CSS pixels. */
   size?: number;
+  /** Show the head alone (true) or the whole picture (false); by default the head alone below HEAD_CROP_BELOW pixels. */
+  crop?: boolean;
   className?: string;
 }
 
@@ -1029,13 +1031,13 @@ export const HEAD_CROP_BELOW = 48;
 /** The head and the top of the shoulders, in the drawing's 64-unit square. */
 export const HEAD_VIEWBOX = "12 5 40 40";
 
-export const AvatarPortrait: React.FC<PortraitProps> = ({ appearance, size = 40, className }) => {
+export const AvatarPortrait: React.FC<PortraitProps> = ({ appearance, size = 40, crop, className }) => {
   const parts = portraitElements(appearance);
   if (!parts) return null;
   // At the People list's 32 px the whole picture gives a face about 13 px; the head alone gives about 21. An animal is
   // drawn whole from the side, and its whole shape is what tells a duck from a snake, so it is never cropped.
   const record = appearanceRecord(appearance);
-  const cropped = size < HEAD_CROP_BELOW && !(record && resolvePlan(record).kind === "animal");
+  const cropped = (crop ?? size < HEAD_CROP_BELOW) && !(record && resolvePlan(record).kind === "animal");
   return (
     <svg
       className={["avatar-portrait", cropped ? "avatar-portrait-head" : "", className].filter(Boolean).join(" ")}
