@@ -16,6 +16,9 @@ const ACROSS: [[number, number, number], [number, number, number], [number, numb
 const UPSIDE_DOWN: [[number, number, number], [number, number, number], [number, number, number]] = [[1, 0, 0], [0, -1, 0], [0, 0, -1]];
 const DOME: Array<[number, number]> = [[1, 0], [0.97, 0.25], [0.87, 0.5], [0.66, 0.75], [0.36, 0.93], [0, 1]];
 
+/** An ellipse of 16 points anticlockwise from the wearer's left (+x), as fractions of a box, half-widths `rx`, `ry`. */
+const ring = (rx: number, ry: number): Array<[number, number]> =>
+  Array.from({ length: 16 }, (_, i): [number, number] => [0.5 + rx * Math.cos((i * Math.PI) / 8), 0.5 + ry * Math.sin((i * Math.PI) / 8)]);
 const part = (frame: LayoutFramePart["frame"], fields: Omit<LayoutFramePart, "frame">): LayoutFramePart => ({ frame, ...fields });
 const steelMade = { species: "steel", family: "metal" };
 /** The garment with each part made of `material` (`LayoutFormPart.material`), as the game sends a part's material. */
@@ -33,11 +36,17 @@ export const HELM: LayoutGarment = madeOf({
   ],
 }, steelMade);
 
-/** A breastplate and backplate over the torso, with a pauldron on each shoulder. */
+/** A breastplate and backplate in one lofted shell over the torso, with a pauldron on each shoulder. */
 export const CUIRASS: LayoutGarment = madeOf({
   name: "a steel cuirass with pauldrons", areas: ["torso"], layer: 3, colour: steel,
   form_parts: [
-    part("torso", { shape: "cone", center: [0, 0, 0.52], size: [1.0, 1.16, 1.0], basis: UPSIDE_DOWN, top: 0.74 }),
+    // A lofted shell: narrow at the waist, full at the chest, drawn in to the neck at the top (open there and at the
+    // waist), with an opening for each arm below the shoulders.
+    part("torso", {
+      shape: "loft", center: [0, 0, 0.55], size: [1.08, 1.2, 1.1], wall: [0.03, 0.03, 0.03], caps: "none", smooth: true,
+      sections: [[0, 0.36, 0.4], [0.4, 0.44, 0.46], [0.65, 0.49, 0.49], [0.85, 0.5, 0.5], [1, 0.28, 0.4]].map(([z, rx, ry]) => ({ z, outline: ring(rx, ry) })),
+      holes: [[2, 3, 15, 1], [2, 3, 7, 9]],
+    }),
     ...sides((_side, u) => [part("torso", { shape: "lathe", center: [u * 0.5, 0, 0.93], size: [0.46, 1.06, 0.24], profile: DOME, colour: darkSteel })]),
   ],
 }, steelMade);
@@ -98,11 +107,28 @@ export const SWORD: LayoutHeld = {
   hand: "main", name: "a steel arming sword", id: "#159080", lifetime: "sword-1", size: [0.92, 0.18, 0.03],
   grip: { center: [-0.33, 0, 0], axis: [1, 0, 0] },
   form_parts: [
-    { shape: "box", center: [0.07, 0, 0], size: [0.66, 0.045, 0.008], colour: steel, material: steelMade, role: "blade", label: "blade" },
-    { shape: "cone", center: [0.43, 0, 0], size: [0.045, 0.008, 0.06], basis: ACROSS, top: 0, colour: steel, role: "point", label: "point" },
+    // The blade to its point, one outline carried through its thickness, bevelled to an edge all round.
+    {
+      shape: "extrude", center: [0.095, 0, 0], size: [0.7, 0.045, 0.008], colour: steel, material: steelMade, role: "blade", label: "blade",
+      outline: [[0, 0.1], [0.86, 0.08], [1, 0.5], [0.86, 0.92], [0, 0.9]], bevel: [0.012, 0.004],
+    },
     { shape: "box", center: [-0.265, 0, 0], size: [0.025, 0.18, 0.02], colour: darkSteel, role: "crossguard", label: "crossguard" },
     { shape: "cylinder", center: [-0.33, 0, 0], size: [0.03, 0.03, 0.11], basis: ACROSS, colour: leather, role: "grip", label: "grip" },
     { shape: "sphere", center: [-0.405, 0, 0], size: [0.045, 0.045, 0.045], colour: darkSteel, role: "pommel", label: "pommel" },
+  ],
+};
+
+/** A bow for the off hand: a swept limb curving back from its grip at the middle, and its string. */
+export const BOW: LayoutHeld = {
+  hand: "off", name: "a yew longbow", id: "#159099", lifetime: "bow-1", size: [1.2, 0.16, 0.04],
+  grip: { center: [0, -0.064, 0], axis: [1, 0, 0] },
+  form_parts: [
+    {
+      shape: "sweep", center: [0, 0, 0], size: [1.2, 0.16, 0.04], colour: { name: "yew", hex: "#b5763a" }, material: { species: "yew", family: "wood" },
+      role: "bow", label: "bow", smooth: true, aspect: 1.5,
+      path: [[0, 0.95, 0.5], [0.25, 0.35, 0.5], [0.5, 0.1, 0.5], [0.75, 0.35, 0.5], [1, 0.95, 0.5]], radius: [0.006, 0.011, 0.014, 0.011, 0.006],
+    },
+    { shape: "sweep", center: [0, 0.074, 0], size: [1.19, 0.004, 0.004], colour: { name: "linen", hex: "#d8ccb0" }, role: "string", label: "string", path: [[0, 0.5, 0.5], [1, 0.5, 0.5]], radius: [0.0015, 0.0015] },
   ],
 };
 
@@ -123,7 +149,7 @@ export function armouredPerson(id: string, x: number, opts: { posture?: "standin
       skin: { name: "tan", hex: "#c69c72" }, eyes: { name: "brown", hex: "#5a3a22" },
       hair: { length_cm: 20, texture: "wavy", style: "loose", name: "black", hex: "#1c1c1c" },
       garments: [{ name: "a linen shirt", areas: ["torso", "arms", "waist", "legs"], layer: 1, colour: { name: "linen", hex: "#d8ccb0" } }, ...(opts.garments ?? ARMOUR)],
-      held: opts.held ?? [SWORD],
+      held: opts.held ?? [SWORD, BOW],
     },
   };
 }

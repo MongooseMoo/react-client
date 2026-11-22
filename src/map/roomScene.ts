@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
 import { type FigureParams, type Footprint, figureParams, UNCOLOURED_GARMENT, wornParts } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { isLayoutPose, type LayoutFormPart, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
-import { figureFrames, frameMatrix } from "./bodyFrames";
+import { isLayoutPose, type LayoutFormPart, FRAME_NAMES, type FrameName, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
+import { type BodyFrame, figureFrames, frameMatrix } from "./bodyFrames";
 import { FigureCache, figureMesh, headOutline, standParts } from "./figureMesh";
 import { CREASE_DEGREES, extrudeGeometry, loftGeometry, roundedBoxGeometry, sweepGeometry } from "./partShapes";
 
@@ -600,21 +600,22 @@ class Builder {
     wornParts(worn).forEach((garment, rank) => {
       // Each garment further out than the one under it, so the outer layer is the one seen where two meet.
       const grown = 1 + LAYER_GAP * rank;
+      const byFrame = new Map<FrameName, THREE.Mesh[]>();
       for (const part of garment.parts as LayoutFramePart[]) {
         const frame = frames[part.frame];
         const at = frameMatrix({ ...frame, size: frame.size.clone().multiply(new THREE.Vector3(grown, grown, 1)) });
-        added.push(this.wornPart(figure, part, at, garment.colour, `worn ${garment.name}`));
+        const mesh = this.wornPart(figure, part, at, garment.colour, `worn ${garment.name}`);
+        byFrame.set(part.frame, [...(byFrame.get(part.frame) ?? []), mesh]);
+        added.push(mesh);
       }
+      for (const [name, meshes] of byFrame) aboveFloor(meshes, frames[name], LIMB_FRAMES.has(name));
     });
     for (const held of heldThings(worn)) {
       // The main hand is the right.
       const hand = frames[held.hand === "main" ? "right_hand" : "left_hand"];
-      const grip = hand.origin.clone().addScaledVector(hand.z, hand.size.z / 2);
-      // Its grip along the hand's length, the working end down from the wrist (the arm hangs).
-      const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(...held.grip.axis), hand.z.clone().negate());
-      const at = new THREE.Matrix4().compose(grip, turn, new THREE.Vector3(1, 1, 1))
-        .multiply(new THREE.Matrix4().makeTranslation(-held.grip.center[0], -held.grip.center[1], -held.grip.center[2]));
-      for (const part of held.form_parts) added.push(this.wornPart(figure, part, at, UNCOLOURED_GARMENT, `held ${held.name}`));
+      const meshes = held.form_parts.map((part) => this.wornPart(figure, part, new THREE.Matrix4(), UNCOLOURED_GARMENT, `held ${held.name}`));
+      holdThing(meshes, held, hand, params.posture === "reclining");
+      added.push(...meshes);
     }
     return added;
   }
@@ -658,6 +659,119 @@ export const LAYER_GAP = 0.03;
 export const STAND_HEIGHT = 1.75;
 /** A stand's own colour: plain pale wood. */
 export const STAND_COLOUR = 0xb59a72;
+
+/** The frames of the limbs: a part fitted to one may be turned about the limb's length to keep it off the floor. */
+const LIMB_FRAMES: ReadonlySet<FrameName> = new Set(FRAME_NAMES.filter((name) => /_(upper_arm|forearm|hand|thigh|shin|foot)$/.test(name)));
+/** How far above the floor a held thing's lowest point stays, metres. */
+export const HELD_CLEARANCE = 0.02;
+/** How far below level a held thing's long end points, radians, when the floor allows. */
+export const HELD_DROP = Math.PI / 4;
+
+/** The lowest (`sign` 1) or highest (-1) point of `meshes` as drawn (their vertices through their matrices), in their parent's frame. */
+function extremeZ(meshes: THREE.Mesh[], sign = 1): number {
+  const v = new THREE.Vector3();
+  let out = Number.POSITIVE_INFINITY;
+  for (const mesh of meshes) {
+    const position = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) out = Math.min(out, sign * v.fromBufferAttribute(position, i).applyMatrix4(mesh.matrix).z);
+  }
+  return sign * out;
+}
+
+/**
+ * Keeps one garment's parts on one frame off the floor (z = 0 in the figure's own frame, the floor in every posture).
+ * Parts on a limb are first turned together about the limb's length by the least angle that clears (a shield on a
+ * lying person's forearm comes to lie over the arm, face up); anything still below is pressed flat against the floor
+ * from its top (a pack under a lying person's back). Parts above the floor are left as they are.
+ */
+function aboveFloor(meshes: THREE.Mesh[], frame: BodyFrame, limb: boolean): void {
+  if (extremeZ(meshes) >= -1e-9) return;
+  const base = meshes.map((mesh) => mesh.matrix.clone());
+  const set = (m: THREE.Matrix4) => {
+    meshes.forEach((mesh, i) => {
+      mesh.matrix.multiplyMatrices(m, base[i]);
+    });
+  };
+  if (limb) {
+    const toAxis = new THREE.Matrix4().makeTranslation(frame.origin.x, frame.origin.y, frame.origin.z);
+    const fromAxis = new THREE.Matrix4().makeTranslation(-frame.origin.x, -frame.origin.y, -frame.origin.z);
+    for (let degrees = 2; degrees <= 180; degrees += 2) {
+      for (const sign of [1, -1]) {
+        set(toAxis.clone().multiply(new THREE.Matrix4().makeRotationAxis(frame.z, (sign * degrees * Math.PI) / 180)).multiply(fromAxis));
+        if (extremeZ(meshes) >= -1e-9) return;
+      }
+    }
+    set(new THREE.Matrix4());
+  }
+  const top = extremeZ(meshes, -1);
+  const low = extremeZ(meshes);
+  // Wholly below the floor (it never is for a part on a body): laid flat on it.
+  if (top <= 0) {
+    set(new THREE.Matrix4().makeScale(1, 1, 0).setPosition(0, 0, 0.001));
+    return;
+  }
+  set(new THREE.Matrix4().makeTranslation(0, 0, top).multiply(new THREE.Matrix4().makeScale(1, 1, top / (top - low))).multiply(new THREE.Matrix4().makeTranslation(0, 0, -top)));
+}
+
+/**
+ * Places a held thing's part meshes (each already placed in the thing's own frame) in `hand`. The grip lies across the
+ * palm, the thing's long end (the longer side from `grip.center` along `grip.axis`) pointing forward and HELD_DROP below
+ * level, its thinnest side across (an edge leads), raised toward level until it is HELD_CLEARANCE above the floor.
+ * Reclining, it lies flat on the floor beside the hand, its long end toward the feet.
+ */
+function holdThing(meshes: THREE.Mesh[], held: LayoutHeld, hand: BodyFrame, reclining: boolean): void {
+  const own = meshes.map((mesh) => mesh.matrix.clone());
+  const grip = new THREE.Vector3(...held.grip.center);
+  const axis = new THREE.Vector3(...held.grip.axis).normalize();
+  // Which way along the grip is longer: the parts' vertices furthest each way.
+  let ahead = 0;
+  let behind = 0;
+  const v = new THREE.Vector3();
+  meshes.forEach((mesh, k) => {
+    const position = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      const along = v.fromBufferAttribute(position, i).applyMatrix4(own[k]).sub(grip).dot(axis);
+      ahead = Math.max(ahead, along);
+      behind = Math.max(behind, -along);
+    }
+  });
+  if (behind > ahead) axis.negate();
+  // Its thinnest side square to the grip, from its box.
+  const [thinnest] = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
+    .map((side, i) => ({ side, size: held.size[i] }))
+    .filter(({ side }) => Math.abs(side.dot(axis)) < 0.9)
+    .sort((a, b) => a.size - b.size);
+  const thin = thinnest.side.clone().addScaledVector(axis, -thinnest.side.dot(axis)).normalize();
+  const middle = hand.origin.clone().addScaledVector(hand.z, hand.size.z / 2);
+  // The turn taking the long end to `toward`, the thin side as near `across` as it goes.
+  const turned = (toward: THREE.Vector3, across: THREE.Vector3) => {
+    const q = new THREE.Quaternion().setFromUnitVectors(axis, toward);
+    const now = thin.clone().applyQuaternion(q);
+    const want = across.clone().addScaledVector(toward, -across.dot(toward)).normalize();
+    const roll = Math.atan2(now.clone().cross(want).dot(toward), now.dot(want));
+    return new THREE.Quaternion().setFromAxisAngle(toward, roll).multiply(q);
+  };
+  const place = (at: THREE.Vector3, q: THREE.Quaternion) => {
+    const m = new THREE.Matrix4().compose(at, q, new THREE.Vector3(1, 1, 1)).multiply(new THREE.Matrix4().makeTranslation(-grip.x, -grip.y, -grip.z));
+    meshes.forEach((mesh, k) => {
+      mesh.matrix.multiplyMatrices(m, own[k]);
+    });
+  };
+  if (reclining) {
+    // Beside the hand, out from the body by the hand's width, on the floor, toward the feet (the figure's +y lying down).
+    const q = turned(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
+    const at = middle.clone().setX(middle.x + Math.sign(middle.x) * hand.size.x);
+    place(at, q);
+    at.z -= extremeZ(meshes) - 0.001;
+    place(at, q);
+    return;
+  }
+  // Forward is the figure's +y in its own frame, down its -z, across its x.
+  for (let drop = HELD_DROP; ; drop = Math.max(0, drop - Math.PI / 180)) {
+    place(middle, turned(new THREE.Vector3(0, Math.cos(drop), -Math.sin(drop)), new THREE.Vector3(1, 0, 0)));
+    if (drop === 0 || extremeZ(meshes) >= HELD_CLEARANCE) return;
+  }
+}
 
 /** The held things a decoded appearance or stand carries (`appearance.held`, checked by the Room.Layout decoder). */
 function heldThings(worn: unknown): LayoutHeld[] {

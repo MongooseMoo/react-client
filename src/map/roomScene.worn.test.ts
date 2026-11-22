@@ -5,7 +5,7 @@ import type { LayoutGarment, LayoutThing, RoomLayout } from "../gmcp/Room";
 import { ARMOUR, armouredPerson, armourStand, CUIRASS, HELM, SHIELD, SWORD } from "./bodyFrames.fixture";
 import { figureFrames } from "./bodyFrames";
 import { placeThings } from "./roomLayout";
-import { buildRoomScene, LAYER_GAP, scenePick, STAND_HEIGHT } from "./roomScene";
+import { buildRoomScene, HELD_CLEARANCE, LAYER_GAP, scenePick, STAND_HEIGHT } from "./roomScene";
 
 const room = (things: LayoutThing[]) => {
   const layout: RoomLayout = { num: 1, size: [8, 8, 3], exits: [], things };
@@ -70,16 +70,50 @@ describe("worn and held things on figures", () => {
     expect(figureParams(helmOnly, { height: 1.75 })).toMatchObject({ hair: "none", headCovered: true });
   });
 
-  it("puts a held thing's grip in the hand, rigid at its own size", () => {
+  it("holds a thing with its grip across the palm, its long end forward and 45 degrees down, rigid at its own size", () => {
     const scene = room([armouredPerson("#1", 0, { garments: [], held: [SWORD] })]);
-    const grip = drawn(scene, "#1", `held ${SWORD.name}`).find(({ mesh }) => mesh.geometry.type !== "BoxGeometry" && Math.abs(new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()).z - 0.11) < 0.01);
-    expect(grip).toBeDefined();
-    const centre = grip?.box.getCenter(new THREE.Vector3()) as THREE.Vector3;
-    expect(centre.distanceTo(roomPoint("standing", "right_hand", 0.5))).toBeLessThan(1e-3);
-    // The whole sword is its real length, hanging straight down from the hand.
+    const parts = drawn(scene, "#1", `held ${SWORD.name}`);
+    // Parts in the order sent: blade, crossguard, grip, pommel.
+    const centre = (i: number) => new THREE.Box3().setFromObject(parts[i].mesh, true).getCenter(new THREE.Vector3());
+    expect(centre(2).distanceTo(roomPoint("standing", "right_hand", 0.5))).toBeLessThan(1e-3);
+    // The blade runs from the grip toward the person's front (south, -y in the room) and down, at 45 degrees.
+    const along = centre(0).sub(centre(2)).normalize();
+    expect(along.y).toBeCloseTo(-Math.SQRT1_2, 2);
+    expect(along.z).toBeCloseTo(-Math.SQRT1_2, 2);
     const all = new THREE.Box3();
-    for (const { box } of drawn(scene, "#1", "held ")) all.union(box);
-    expect(all.max.z - all.min.z).toBeCloseTo(0.89, 2);
+    for (const { mesh } of parts) all.union(new THREE.Box3().setFromObject(mesh, true));
+    expect(all.min.distanceTo(all.max)).toBeGreaterThan(0.85);
+  });
+
+  it("draws nothing worn or held below the floor, raising a held thing toward level and turning a limb's parts, in every posture, build and height", () => {
+    const people: LayoutThing[] = [];
+    for (const posture of ["standing", "sitting", "reclining"] as const) {
+      for (const build of ["slender", "average", "stocky"]) {
+        for (const height of [1.2, 1.5, 1.75, 2.0]) people.push(armouredPerson(`#${people.length + 1}`, 1.2 * people.length, { posture, build, height }));
+      }
+    }
+    const scene = room(people);
+    for (const person of people) {
+      for (const { mesh } of drawn(scene, person.id, "worn ")) expect(new THREE.Box3().setFromObject(mesh, true).min.z, person.id).toBeGreaterThanOrEqual(-1e-6);
+      const held = new THREE.Box3();
+      for (const { mesh } of drawn(scene, person.id, "held ")) held.union(new THREE.Box3().setFromObject(mesh, true));
+      const lying = person.pose?.posture === "reclining";
+      expect(held.min.z, person.id).toBeGreaterThanOrEqual(lying ? 0 : HELD_CLEARANCE - 1e-6);
+    }
+  });
+
+  it("lays a held thing flat on the floor toward the feet when reclining, and turns a forearm's shield over the arm, face up", () => {
+    const scene = room([armouredPerson("#1", 0, { posture: "reclining", garments: [SHIELD], held: [SWORD] })]);
+    const sword = new THREE.Box3();
+    for (const { mesh } of drawn(scene, "#1", "held ")) sword.union(new THREE.Box3().setFromObject(mesh, true));
+    expect(sword.min.z).toBeGreaterThanOrEqual(0);
+    expect(sword.max.z - sword.min.z).toBeLessThan(0.2);
+    expect(sword.max.y - sword.min.y).toBeGreaterThan(0.85);
+    const board = drawn(scene, "#1", `worn ${SHIELD.name}`)[0];
+    expect(new THREE.Box3().setFromObject(board.mesh, true).min.z).toBeGreaterThanOrEqual(-1e-6);
+    // Turned by the least angle that clears: its face (its basis 3, the frame's u) points mostly up.
+    const face = new THREE.Vector3().setFromMatrixColumn(board.mesh.matrixWorld, 2).normalize();
+    expect(face.z).toBeGreaterThan(0.7);
   });
 
   it("draws a stand as a neutral figure the neutral height, wearing the armour by the person's path", () => {

@@ -193,9 +193,10 @@ the knee and the shin down to the floor. There is no separate back frame: the to
 client works out every frame from the figure's own proportions (`src/map/bodyFrames.ts`, `figureFrames`); the game
 stores no frame sizes.
 
-`garments[i].form_parts` is a list of parts as for a thing ("Inspecting a construction", below: `shape`, `center`,
-`size`, `basis`, `top`, `profile`, `wall`, `colour`, `role`, `label`), each with `frame`, one of the names above, and
-with `center`, `size` and `basis` in that frame's units, not metres:
+`garments[i].form_parts` is a list of parts as for a thing ("Inspecting a construction", below: every `shape` with
+its own fields, `colour`, `material`, `role`, `label`), each with `frame`, one of the names above, and with `center`,
+`size` and `basis` in that frame's units, not metres. The part's other lengths (`wall`, `round`, an extrude's
+`bevel`, a sweep's `radius`) are in the same units, so a breastplate's wall thickens with the wearer like the rest:
 
 ```json
 {"name": "an open-faced steel helm", "areas": ["head"], "layer": 3, "colour": {"name": "steel", "hex": "#a8b0b8"},
@@ -209,6 +210,10 @@ with `center`, `size` and `basis` in that frame's units, not metres:
 - A garment with parts still colours its `areas`, so nothing shows bare through a gap. A garment with parts and no
   known area (a shield worn on the arm) is drawn from its parts. Parts on the `head` frame hide the hair, as a head
   garment does.
+- Nothing worn is drawn below the floor, in any posture. A garment's parts on a limb frame (an arm, hand, leg or
+  foot) that would reach below it are turned together about that limb's length by the least angle that clears: lying
+  down, a shield on the forearm comes to lie over the arm and body, face up. Parts still below (a pack under a lying
+  person's back) are pressed flat against the floor from their top.
 - A list holding a part the client cannot draw (the same checks as a thing's parts, or a `frame` it does not know)
   drops that garment's parts only: the garment then colours its areas as before, and the person is drawn.
 
@@ -221,10 +226,12 @@ with `center`, `size` and `basis` in that frame's units, not metres:
 ```
 
 `hand` is `main` (the right) or `off` (the left). `form_parts` are in metres about the thing's own box centre, as a
-thing's are. The thing is drawn rigid at that size with `grip.center` in the middle of the hand and `grip.axis` (the
-way from the grip toward the working end, a unit vector) pointing down the hand, away from the wrist: the arms hang,
-so a held thing hangs from the hand. An entry missing any key, with no parts, or with a part the client cannot draw
-is left out.
+thing's are. The thing is drawn rigid at that size with `grip.center` in the middle of the hand, the grip lying
+across the palm: its long end (the longer side from `grip.center` along `grip.axis`, the blade, haft or barrel)
+points forward and 45 degrees below level, its thinnest side across (an edge leads). Nothing held is drawn below the
+floor: when the long end would come within 2 cm of it, the angle is raised toward level until it clears by 2 cm (a
+short person's sword, a seated person's). Lying down, a held thing lies flat on the floor beside its hand, pointing
+toward the feet. An entry missing any key, with no parts, or with a part the client cannot draw is left out.
 
 A thing with `stand: {"garments": […], "held": […]}` (an armour stand, a rack's figure) is drawn as a plain figure
 of the neutral body (1.75 m, average build, standing) on a post, in pale wood, wearing and holding these by the same
