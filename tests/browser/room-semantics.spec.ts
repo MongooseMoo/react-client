@@ -17,7 +17,7 @@ test('native room semantics survive physical updates without acoustic membership
       const spatial = new GMCPClientSpatial(client);
       const layout = livingRoomLayout();
       layout.room_lifetime = 'room-fixture';
-      layout.finishes = { floor: 'oak', wall: 'drywall' };
+      layout.finishes = { floor: { name: 'oak' }, wall: { name: 'drywall' } };
       layout.things = layout.things.map(t => ({ ...t, lifetime: 'body-fixture' }));
       const seat = layout.things.find(t => t.id === '#2');
       seat.relation = { kind: 'on', target: '#1', text: 'on coffee table' };

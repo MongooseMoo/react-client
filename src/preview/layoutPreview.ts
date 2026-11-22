@@ -7,7 +7,7 @@ import { PREVIEW_VIEWS, previewLayout } from "./previewInput";
 
 /**
  * The page `scripts/preview-layout.mjs` drives: draws a Room.Layout (or one thing's form parts) with the client's own
- * scene code and lights, walls and ceiling left out, and turns the camera to each fixed view. Not part of the app:
+ * scene code and its lights (the input's `light`, else the neutral fill), walls and ceiling left out, and turns the camera to each fixed view. Not part of the app:
  * nothing imports it, so the production bundle never holds it. See docs/room-layout.md, "Previewing forms".
  */
 
@@ -15,7 +15,7 @@ const WIDTH = 960;
 const HEIGHT = 720;
 const FOV = 35;
 
-const { renderer, environment } = roomRenderer();
+const { renderer } = roomRenderer();
 renderer.setPixelRatio(1);
 renderer.setSize(WIDTH, HEIGHT);
 document.body.appendChild(renderer.domElement);
@@ -45,7 +45,9 @@ window.preview = {
       scene.remove(room.root);
       disposeRoomScene(room);
     }
-    room = buildRoomScene({ layout, placed: placeThings(layout), youId: "", environment });
+    room = buildRoomScene({ layout, placed: placeThings(layout), youId: "" });
+    // Lit as the 3D views light it: by the input's `light`, else the neutral fill (docs/room-layout.md, "Light").
+    renderer.toneMappingExposure = room.exposure;
     // The things, not the room: its walls and ceiling would stand between the camera and them.
     for (const wall of Object.values(room.walls)) wall.visible = false;
     room.ceiling.visible = false;
