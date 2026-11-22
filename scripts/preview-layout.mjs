@@ -6,7 +6,8 @@
 // <in.json> is a Room.Layout as the game sends it, or one thing: {"size": [w, d, h], "form_parts": [...], ...}, its
 // box in metres and any other keys of a Room.Layout thing (name, material, a person's kind and appearance). Writes
 // <outdir>/<view>.png and prints, per thing, how many parts were sent and, when the client would not draw them, which
-// part the decoder rejects and why (one such part drops the thing's whole list). Exits 1 then, or on any error; 2 on
+// part the decoder rejects and why (one such part drops the thing's whole list), and why any worn or held thing on a
+// person or stand is not drawn. Exits 1 then, or on any error; 2 on
 // a wrong command line. See docs/room-layout.md, "Previewing forms".
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -47,6 +48,10 @@ try {
       console.log(`${thing.id} ${thing.name}: ${thing.parts} parts, NOT DRAWN: ${thing.problem}`);
       problems.push(`${thing.id} ${thing.name}: its parts are not drawn (${thing.problem})`);
     } else console.log(`${thing.id} ${thing.name}: ${thing.parts ? `${thing.parts} parts, ` : ''}drawn`);
+    for (const worn of thing.worn) {
+      console.log(`${thing.id} ${thing.name}: ${worn}`);
+      problems.push(`${thing.id} ${thing.name}: ${worn}`);
+    }
   }
   const canvas = page.locator('canvas');
   for (const view of VIEWS) {

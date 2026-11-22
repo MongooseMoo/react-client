@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { drawableLayout, formPartsProblem } from "../gmcp/Room";
+import { drawableLayout, formPartsProblem, wornProblems } from "../gmcp/Room";
 import { placeThings } from "../map/roomLayout";
 import { roomRenderer } from "../map/roomRenderer";
 import { buildRoomScene, disposeRoomScene, type RoomScene } from "../map/roomScene";
@@ -26,7 +26,7 @@ let room: RoomScene | undefined;
 declare global {
   interface Window {
     preview?: {
-      load: (input: unknown) => { things: Array<{ id: string; name: string; parts: number; problem?: string }> };
+      load: (input: unknown) => { things: Array<{ id: string; name: string; parts: number; problem?: string; worn: string[] }> };
       view: (name: string) => void;
     };
   }
@@ -35,7 +35,8 @@ declare global {
 window.preview = {
   /**
    * Draws `input` (see `previewLayout`); says, per thing, how many parts were sent and, when the client would not draw
-   * them, the decoder's reason (`formPartsProblem`: the first part it rejects, and why).
+   * them, the decoder's reason (`formPartsProblem`: the first part it rejects, and why), and why any worn or held
+   * thing on a person or stand is not drawn (`wornProblems`).
    */
   load(input) {
     const sent = previewLayout(input);
@@ -56,6 +57,7 @@ window.preview = {
         name: thing.name,
         parts: Array.isArray(thing.form_parts) ? thing.form_parts.length : 0,
         ...(thing.form_parts === undefined ? {} : { problem: formPartsProblem(thing.form_parts) }),
+        worn: wornProblems(thing),
       })),
     };
   },

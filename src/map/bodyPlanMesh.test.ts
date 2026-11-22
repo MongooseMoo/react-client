@@ -5,7 +5,8 @@ import { BODY_PLANS } from "../avatar/bodyPlan";
 import { GAME_LOOKS, LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS } from "../avatar/bodyPlans.fixture";
 import { contrast, INK_DARK } from "../avatar/colour";
 import { figureParams, NEUTRAL_CLOTHING } from "../avatar/figure";
-import { FACET_SHADES, HOCK, KNEE, planParts } from "./bodyPlanMesh";
+import { HOCK, KNEE } from "./bodyFrames";
+import { FACET_SHADES, planParts } from "./bodyPlanMesh";
 import { figureGeometry, headOutline } from "./figureMesh";
 import { placeThings } from "./roomLayout";
 import { livingRoomLayout } from "./roomLayout.fixture";
@@ -92,7 +93,7 @@ describe("body plan figures", () => {
   it("draws the shark head's body like the person's and its head in the form's grey", () => {
     const parts = planParts(params("shark head, game look"));
     expect(parts.find((x) => x.name === "snout")?.colour).toBe("#9a9893");
-    expect(parts.filter((x) => x.name === "arm").map((x) => x.colour)).toEqual(["#e8c547", "#e8c547"]);
+    expect(parts.filter((x) => x.name === "upper arm" || x.name === "forearm").map((x) => x.colour)).toEqual(["#e8c547", "#e8c547", "#e8c547", "#e8c547"]);
   });
 
   it("stands a humanoid's crown at the box's top and leans a hunched plan forward", () => {

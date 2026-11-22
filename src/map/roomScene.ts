@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
-import { type Footprint, figureParams } from "../avatar/figure";
+import { type FigureParams, type Footprint, figureParams, UNCOLOURED_GARMENT, wornParts } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
-import { FigureCache, figureMesh, headOutline } from "./figureMesh";
+import { isLayoutPose, type LayoutFormPart, FRAME_NAMES, type FrameName, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
+import { type BodyFrame, figureFrames, frameMatrix } from "./bodyFrames";
+import { FigureCache, figureMesh, headOutline, standParts } from "./figureMesh";
 import { CREASE_DEGREES, extrudeGeometry, loftGeometry, roundedBoxGeometry, sweepGeometry } from "./partShapes";
 
 export { FigureCache };
@@ -375,13 +376,13 @@ export function thingFamily(thing: LayoutThing): string | undefined {
 
 /**
  * A form part's colour and family. Colour: its sent `colour`, else its material's species colour, else its
- * material's family colour, else `fallback` (the thing's, as before materials were sent). Family: its material's,
- * else the thing's main species' family.
+ * material's family colour, else `fallback` (the thing's, as before materials were sent; a garment's for a worn part).
+ * Family: its material's, else `fallbackFamily` (the thing's main species' family).
  */
-export function partLook(part: LayoutFormPart, thing: LayoutThing, fallback: number): { colour: number; family: string | undefined } {
+export function partLook(part: LayoutFormPart, fallbackFamily: string | undefined, fallback: number): { colour: number; family: string | undefined } {
   const material = partMaterial(part);
   const hex = colourHex(part.colour);
-  const family = material?.family ?? thingFamily(thing);
+  const family = material?.family ?? fallbackFamily;
   const colour = hex ? hexToNumber(hex)
     : material ? speciesOf(material.species)?.colour ?? (Object.hasOwn(FAMILY_COLOURS, material.family) ? FAMILY_COLOURS[material.family] : fallback)
     : fallback;
@@ -569,12 +570,213 @@ class Builder {
       const offset = new THREE.Vector3(0, 0, -pose.dimensions_m[2] / 2).applyQuaternion(q);
       mesh.position.fromArray(pose.centre_m).add(offset);
     }
-    mesh.updateMatrixWorld();
+    const worn = this.wear(mesh, params, visible);
+    mesh.updateMatrixWorld(true);
     const chin = params.top - params.headHeight * 1.05;
     const outline = headOutline(mesh.geometry, chin);
     const toWorld = (p: THREE.Vector3) => p.clone().applyMatrix4(mesh.matrixWorld);
-    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld), animal: params.plan.kind === "animal" };
+    const head = headBox(mesh.geometry, chin).clone();
+    // A helm or a hat drawn from parts stands above the head: the label and a zoom onto the head go over it too.
+    const above: THREE.Vector3[] = [];
+    for (const part of worn) {
+      const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute).applyMatrix4(part.matrix);
+      if (box.max.z < chin) continue;
+      head.union(box);
+      above.push(...boxCorners(box).filter((p) => p.z >= chin));
+    }
+    return { mesh, label: [...outline, ...above].map(toWorld), head: boxCorners(head).map(toWorld), animal: params.plan.kind === "animal" };
   }
+
+  /**
+   * What a figure (`mesh`, built from `params`) wears and holds, from `worn` (an appearance or a stand: `garments` and
+   * `held`), as meshes added to it in its own frame: each garment's parts mapped from its body frames' units onto this
+   * figure, and each held thing rigid at its size with its grip in the hand. Returns the meshes added. Nothing is
+   * added for a body plan without the human skeleton. The figure's geometry stays the cached one.
+   */
+  wear(figure: THREE.Object3D, params: FigureParams, worn: unknown): THREE.Mesh[] {
+    const frames = figureFrames(params);
+    if (!frames) return [];
+    const added: THREE.Mesh[] = [];
+    wornParts(worn).forEach((garment, rank) => {
+      // Each garment further out than the one under it, so the outer layer is the one seen where two meet.
+      const grown = 1 + LAYER_GAP * rank;
+      const byFrame = new Map<FrameName, THREE.Mesh[]>();
+      for (const part of garment.parts as LayoutFramePart[]) {
+        const frame = frames[part.frame];
+        const at = frameMatrix({ ...frame, size: frame.size.clone().multiply(new THREE.Vector3(grown, grown, 1)) });
+        const mesh = this.wornPart(figure, part, at, garment.colour, `worn ${garment.name}`);
+        byFrame.set(part.frame, [...(byFrame.get(part.frame) ?? []), mesh]);
+        added.push(mesh);
+      }
+      for (const [name, meshes] of byFrame) aboveFloor(meshes, frames[name], LIMB_FRAMES.has(name));
+    });
+    for (const held of heldThings(worn)) {
+      // The main hand is the right.
+      const hand = frames[held.hand === "main" ? "right_hand" : "left_hand"];
+      const meshes = held.form_parts.map((part) => this.wornPart(figure, part, new THREE.Matrix4(), UNCOLOURED_GARMENT, `held ${held.name}`));
+      holdThing(meshes, held, hand, params.posture === "reclining");
+      added.push(...meshes);
+    }
+    return added;
+  }
+
+  /** One worn or held part on a figure: its unit box placed as `placePart` places a thing's, then by `at`. */
+  private wornPart(figure: THREE.Object3D, part: LayoutFormPart, at: THREE.Matrix4, colour: string, name: string): THREE.Mesh {
+    const look = partLook(part, undefined, hexToNumber(colour));
+    const mesh = new THREE.Mesh(partGeometry(part), this.material(look.colour, { family: look.family }));
+    mesh.userData.part = name;
+    mesh.matrixAutoUpdate = false;
+    placePart(mesh, part);
+    mesh.matrix.premultiply(at);
+    figure.add(mesh);
+    return mesh;
+  }
+
+  /**
+   * A stand standing on its group's origin, turned as a person without a facing is: a plain
+   * figure of the neutral body (1.75 m, average build, standing) on a post, wearing and holding `stand`'s things by
+   * the same path as a person.
+   */
+  stand(stand: unknown): THREE.Group {
+    const params = figureParams({ build: "average" }, { height: STAND_HEIGHT });
+    const group = new THREE.Group();
+    group.rotation.z = Math.PI;
+    group.userData.part = "stand";
+    const material = this.material(STAND_COLOUR);
+    for (const part of standParts(params)) {
+      const mesh = new THREE.Mesh(part.geometry, material);
+      mesh.userData.part = "stand";
+      group.add(mesh);
+    }
+    this.wear(group, params, stand);
+    return group;
+  }
+}
+
+/** How much wider and deeper each garment drawn from parts is than the one under it: 3%. */
+export const LAYER_GAP = 0.03;
+/** A stand's figure: the neutral body's height, metres. */
+export const STAND_HEIGHT = 1.75;
+/** A stand's own colour: plain pale wood. */
+export const STAND_COLOUR = 0xb59a72;
+
+/** The frames of the limbs: a part fitted to one may be turned about the limb's length to keep it off the floor. */
+const LIMB_FRAMES: ReadonlySet<FrameName> = new Set(FRAME_NAMES.filter((name) => /_(upper_arm|forearm|hand|thigh|shin|foot)$/.test(name)));
+/** How far above the floor a held thing's lowest point stays, metres. */
+export const HELD_CLEARANCE = 0.02;
+/** How far below level a held thing's long end points, radians, when the floor allows. */
+export const HELD_DROP = Math.PI / 4;
+
+/** The lowest (`sign` 1) or highest (-1) point of `meshes` as drawn (their vertices through their matrices), in their parent's frame. */
+function extremeZ(meshes: THREE.Mesh[], sign = 1): number {
+  const v = new THREE.Vector3();
+  let out = Number.POSITIVE_INFINITY;
+  for (const mesh of meshes) {
+    const position = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) out = Math.min(out, sign * v.fromBufferAttribute(position, i).applyMatrix4(mesh.matrix).z);
+  }
+  return sign * out;
+}
+
+/**
+ * Keeps one garment's parts on one frame off the floor (z = 0 in the figure's own frame, the floor in every posture).
+ * Parts on a limb are first turned together about the limb's length by the least angle that clears (a shield on a
+ * lying person's forearm comes to lie over the arm, face up); anything still below is pressed flat against the floor
+ * from its top (a pack under a lying person's back). Parts above the floor are left as they are.
+ */
+function aboveFloor(meshes: THREE.Mesh[], frame: BodyFrame, limb: boolean): void {
+  if (extremeZ(meshes) >= -1e-9) return;
+  const base = meshes.map((mesh) => mesh.matrix.clone());
+  const set = (m: THREE.Matrix4) => {
+    meshes.forEach((mesh, i) => {
+      mesh.matrix.multiplyMatrices(m, base[i]);
+    });
+  };
+  if (limb) {
+    const toAxis = new THREE.Matrix4().makeTranslation(frame.origin.x, frame.origin.y, frame.origin.z);
+    const fromAxis = new THREE.Matrix4().makeTranslation(-frame.origin.x, -frame.origin.y, -frame.origin.z);
+    for (let degrees = 2; degrees <= 180; degrees += 2) {
+      for (const sign of [1, -1]) {
+        set(toAxis.clone().multiply(new THREE.Matrix4().makeRotationAxis(frame.z, (sign * degrees * Math.PI) / 180)).multiply(fromAxis));
+        if (extremeZ(meshes) >= -1e-9) return;
+      }
+    }
+    set(new THREE.Matrix4());
+  }
+  const top = extremeZ(meshes, -1);
+  const low = extremeZ(meshes);
+  // Wholly below the floor (it never is for a part on a body): laid flat on it.
+  if (top <= 0) {
+    set(new THREE.Matrix4().makeScale(1, 1, 0).setPosition(0, 0, 0.001));
+    return;
+  }
+  set(new THREE.Matrix4().makeTranslation(0, 0, top).multiply(new THREE.Matrix4().makeScale(1, 1, top / (top - low))).multiply(new THREE.Matrix4().makeTranslation(0, 0, -top)));
+}
+
+/**
+ * Places a held thing's part meshes (each already placed in the thing's own frame) in `hand`. The grip lies across the
+ * palm, the thing's long end (the longer side from `grip.center` along `grip.axis`) pointing forward and HELD_DROP below
+ * level, its thinnest side across (an edge leads), raised toward level until it is HELD_CLEARANCE above the floor.
+ * Reclining, it lies flat on the floor beside the hand, its long end toward the feet.
+ */
+function holdThing(meshes: THREE.Mesh[], held: LayoutHeld, hand: BodyFrame, reclining: boolean): void {
+  const own = meshes.map((mesh) => mesh.matrix.clone());
+  const grip = new THREE.Vector3(...held.grip.center);
+  const axis = new THREE.Vector3(...held.grip.axis).normalize();
+  // Which way along the grip is longer: the parts' vertices furthest each way.
+  let ahead = 0;
+  let behind = 0;
+  const v = new THREE.Vector3();
+  meshes.forEach((mesh, k) => {
+    const position = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i++) {
+      const along = v.fromBufferAttribute(position, i).applyMatrix4(own[k]).sub(grip).dot(axis);
+      ahead = Math.max(ahead, along);
+      behind = Math.max(behind, -along);
+    }
+  });
+  if (behind > ahead) axis.negate();
+  // Its thinnest side square to the grip, from its box.
+  const [thinnest] = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
+    .map((side, i) => ({ side, size: held.size[i] }))
+    .filter(({ side }) => Math.abs(side.dot(axis)) < 0.9)
+    .sort((a, b) => a.size - b.size);
+  const thin = thinnest.side.clone().addScaledVector(axis, -thinnest.side.dot(axis)).normalize();
+  const middle = hand.origin.clone().addScaledVector(hand.z, hand.size.z / 2);
+  // The turn taking the long end to `toward`, the thin side as near `across` as it goes.
+  const turned = (toward: THREE.Vector3, across: THREE.Vector3) => {
+    const q = new THREE.Quaternion().setFromUnitVectors(axis, toward);
+    const now = thin.clone().applyQuaternion(q);
+    const want = across.clone().addScaledVector(toward, -across.dot(toward)).normalize();
+    const roll = Math.atan2(now.clone().cross(want).dot(toward), now.dot(want));
+    return new THREE.Quaternion().setFromAxisAngle(toward, roll).multiply(q);
+  };
+  const place = (at: THREE.Vector3, q: THREE.Quaternion) => {
+    const m = new THREE.Matrix4().compose(at, q, new THREE.Vector3(1, 1, 1)).multiply(new THREE.Matrix4().makeTranslation(-grip.x, -grip.y, -grip.z));
+    meshes.forEach((mesh, k) => {
+      mesh.matrix.multiplyMatrices(m, own[k]);
+    });
+  };
+  if (reclining) {
+    // Beside the hand, out from the body by the hand's width, on the floor, toward the feet (the figure's +y lying down).
+    const q = turned(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
+    const at = middle.clone().setX(middle.x + Math.sign(middle.x) * hand.size.x);
+    place(at, q);
+    at.z -= extremeZ(meshes) - 0.001;
+    place(at, q);
+    return;
+  }
+  // Forward is the figure's +y in its own frame, down its -z, across its x.
+  for (let drop = HELD_DROP; ; drop = Math.max(0, drop - Math.PI / 180)) {
+    place(middle, turned(new THREE.Vector3(0, Math.cos(drop), -Math.sin(drop)), new THREE.Vector3(1, 0, 0)));
+    if (drop === 0 || extremeZ(meshes) >= HELD_CLEARANCE) return;
+  }
+}
+
+/** The held things a decoded appearance or stand carries (`appearance.held`, checked by the Room.Layout decoder). */
+function heldThings(worn: unknown): LayoutHeld[] {
+  const held = typeof worn === "object" && worn !== null ? (worn as { held?: unknown }).held : undefined;
+  return Array.isArray(held) ? (held as LayoutHeld[]) : [];
 }
 
 function bodyQuaternion(pose: LayoutPose): THREE.Quaternion {
@@ -806,6 +1008,23 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
     } else {
       group.userData.form = thingForm(p.thing);
       const pose = p.thing.pose;
+      if (p.thing.stand) {
+        // A stand is drawn as its figure wearing what is on it, in place of its own form.
+        group.userData.form = "stand";
+        const figure = builder.stand(p.thing.stand);
+        group.add(figure);
+        if (isLayoutPose(pose)) {
+          figure.position.z = -pose.dimensions_m[2] / 2;
+          group.quaternion.copy(bodyQuaternion(pose));
+          group.position.fromArray(pose.centre_m);
+        } else figure.position.set(x, y, p.bounds.z0);
+        group.updateMatrixWorld(true);
+        const drawn = new THREE.Box3().setFromObject(group);
+        labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, Math.max(p.bounds.z1, drawn.max.z))]);
+        root.add(group);
+        things.set(p.thing.id, group);
+        continue;
+      }
       if (isLayoutPose(pose) && (pose.box || p.thing.form_parts?.length)) {
         const [w, d, h] = pose.dimensions_m;
         const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
@@ -813,7 +1032,7 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
           const surface = thingColour(p.thing);
           for (const part of p.thing.form_parts) {
             const { role, fitting } = part;
-            const look = partLook(part, p.thing, surface);
+            const look = partLook(part, thingFamily(p.thing), surface);
             // A drawer's face without a colour of its own is a shade darker than what it is made of, so it shows.
             const colour = fitting && !colourHex(part.colour) ? new THREE.Color(look.colour).multiplyScalar(0.78).getHex() : look.colour;
             const geometry = partGeometry(part);
@@ -976,7 +1195,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
       !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
       a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
-      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
+      old.thing.appearance !== next.thing.appearance || old.thing.stand !== next.thing.stand || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
       JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
     const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(

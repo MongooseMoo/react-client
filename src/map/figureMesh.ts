@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { contrast, INK_DARK, overlayHex, toneOff } from "../avatar/colour";
 import { type Ears, type FigureParams, HANGS_LOOSE, type HairTexture, HORN_TONE, type Seam, STUBBLE_OPACITY } from "../avatar/figure";
+import { type BodyFrames, builtFrames, frameEnd, reclineMatrix } from "./bodyFrames";
 import { planParts } from "./bodyPlanMesh";
 
 /**
@@ -420,6 +421,30 @@ export function limb(a: THREE.Vector3, b: THREE.Vector3, radius: number, colour:
   return { geometry, colour };
 }
 
+/**
+ * A straight limb from `a` to `b` bent at `joint` on the line between them, drawn as two parts (`names`, the upper
+ * then the lower): together the same capsule `limb(a, b)` draws, each half a tube rounded at its outer end and open at
+ * the joint, where the other half goes on. Two whole capsules cost 400 more triangles a figure, and their caps at the
+ * joint are inside the other half anyway.
+ */
+export function jointedLimb(a: THREE.Vector3, joint: THREE.Vector3, b: THREE.Vector3, radius: number, colour: string, names: [string, string], fine = true): Part[] {
+  const caps = fine ? 2 : 1;
+  const half = (end: THREE.Vector3, name: string): Part => {
+    const length = joint.distanceTo(end);
+    // Up from the joint: the tube, then the rounded end, a quarter circle in `caps` steps.
+    const outline = [new THREE.Vector2(radius, 0), new THREE.Vector2(radius, length)];
+    for (let i = 1; i <= caps; i++) {
+      const angle = (i / caps) * (Math.PI / 2);
+      outline.push(new THREE.Vector2(i === caps ? 0 : radius * Math.cos(angle), length + radius * Math.sin(angle)));
+    }
+    const geometry = new THREE.LatheGeometry(outline, fine ? RADIAL : 6);
+    const direction = new THREE.Vector3().subVectors(end, joint).normalize();
+    geometry.applyMatrix4(new THREE.Matrix4().compose(joint, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction), new THREE.Vector3(1, 1, 1)));
+    return named({ geometry, colour }, name);
+  };
+  return [half(a, names[0]), half(b, names[1])];
+}
+
 /** An upright cylinder (along z) from z0 to z1, its depth (y) squashed by `depth`. */
 export function trunk(z0: number, z1: number, rBottom: number, rTop: number, depth: number, colour: string, y = 0, sides = RADIAL * 2): Part {
   const geometry = new THREE.CylinderGeometry(rTop, rBottom, Math.max(0.001, z1 - z0), sides);
@@ -652,59 +677,57 @@ export function figureParts(p: FigureParams): Part[] {
   const s = H / 1.75;
   const out: Part[] = [];
   const sitting = p.posture === "sitting";
-  const legTop = H * p.legShare;
-  const seat = 0.26 * H;
-  // Everything above the hips drops by this much when seated.
-  const drop = sitting ? legTop - seat : 0;
-  const hipZ = legTop - drop;
-  const neckBase = H - p.headHeight - 0.045 * H - drop;
-  const headCentreZ = H - p.headHeight / 2 - drop;
-  const headR = p.headHeight / 2;
-  const legR = p.limbRadius * 1.15;
-  const hipX = p.hipHalf * 0.55;
-  const ankleZ = 0.06 * s;
+  // Where every segment is: the body frames (bodyFrames.ts), as the figure is built before it may lie down.
+  const f = builtFrames(p) as BodyFrames;
+  const hipZ = frameEnd(f.left_thigh).z;
+  const neckBase = frameEnd(f.torso).z;
+  const headR = f.head.size.z / 2;
+  const headCentreZ = f.head.origin.z + headR;
+  const legR = f.left_thigh.size.x / 2;
+  const ankleZ = f.left_foot.size.z;
   const outlined = new Set<Seam>(p.outlined);
 
-  // Legs and feet.
-  for (const side of [-1, 1]) {
-    const x = side * hipX;
+  // Legs and feet. Standing, the knee is the middle of what was one limb from the ankle to just under the hip.
+  for (const name of ["left", "right"] as const) {
+    const thigh = f[`${name}_thigh`];
+    const shin = f[`${name}_shin`];
+    const foot = f[`${name}_foot`];
+    const x = foot.origin.x;
     if (sitting) {
-      const knee = new THREE.Vector3(x, 0.24 * H, seat);
-      out.push(limb(new THREE.Vector3(x, 0, hipZ), knee, legR, c.legs));
-      out.push(limb(knee, new THREE.Vector3(x, 0.24 * H, ankleZ + legR), legR * 0.9, c.legs));
-      out.push(block(new THREE.Vector3(x, 0.24 * H + 0.04 * s, ankleZ / 2), new THREE.Vector3(legR * 2.2, 0.16 * s, ankleZ), c.feet));
-      if (outlined.has("ankles")) out.push(named(band(x, 0.24 * H, ankleZ + 0.02 * s, legR * BAND_OUT, 1, c.ink), "band"));
+      out.push(named(limb(frameEnd(thigh), thigh.origin, legR, c.legs), "thigh"));
+      out.push(named(limb(thigh.origin, shin.origin, shin.size.x / 2, c.legs), "shin"));
     } else {
-      out.push(limb(new THREE.Vector3(x, 0, ankleZ + legR), new THREE.Vector3(x, 0, hipZ - legR * 0.5), legR, c.legs));
-      out.push(block(new THREE.Vector3(x, 0.04 * s, ankleZ / 2), new THREE.Vector3(legR * 2.2, 0.16 * s, ankleZ), c.feet));
-      if (outlined.has("ankles")) out.push(named(band(x, 0, ankleZ + 0.02 * s, legR * BAND_OUT, 1, c.ink), "band"));
+      out.push(...jointedLimb(frameEnd(thigh).addScaledVector(thigh.z, -legR * 0.5), thigh.origin, shin.origin, legR, c.legs, ["thigh", "shin"]));
     }
+    out.push(block(new THREE.Vector3(x, foot.origin.y, ankleZ / 2), foot.size.clone(), c.feet));
+    if (outlined.has("ankles")) out.push(named(band(x, shin.origin.y, ankleZ + 0.02 * s, legR * BAND_OUT, 1, c.ink), "band"));
     // Just below the hips' lower edge, where the legs come out, so it shows.
-    if (outlined.has("hips")) out.push(named(band(x, sitting ? 0.06 * s : 0, hipZ - 0.07 * H - BAND_HEIGHT, legR * BAND_OUT, 1, c.ink), "band"));
+    if (outlined.has("hips")) out.push(named(band(x, sitting ? 0.06 * s : 0, f.waist.origin.z - BAND_HEIGHT, legR * BAND_OUT, 1, c.ink), "band"));
   }
 
   // Hips, torso, shoulders.
-  const waistZ = hipZ + 0.05 * H;
-  out.push(trunk(hipZ - 0.07 * H, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips));
+  const waistZ = f.torso.origin.z;
+  out.push(trunk(f.waist.origin.z, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips));
   out.push(trunk(waistZ, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, c.torso));
-  const shoulderZ = neckBase - p.limbRadius * 1.2;
+  const shoulderZ = frameEnd(f.left_upper_arm).z;
   out.push(limb(new THREE.Vector3(-p.shoulderHalf * 0.9, 0, shoulderZ), new THREE.Vector3(p.shoulderHalf * 0.9, 0, shoulderZ), p.limbRadius * 1.35, c.torso));
   if (outlined.has("waist")) out.push(named(band(0, 0, waistZ, p.waistHalf * BAND_OUT, 0.62, c.ink), "band"));
 
-  // Arms and hands, hanging a little away from the body.
-  const wristZ = hipZ - 0.02 * H;
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Vector3(side * p.shoulderHalf, 0, shoulderZ);
-    const wrist = new THREE.Vector3(side * (p.hipHalf + p.limbRadius * 1.6), sitting ? 0.08 * s : 0, wristZ);
-    out.push(limb(shoulder, wrist, p.limbRadius, c.arms));
+  // Arms and hands, hanging a little away from the body, bent at the elbow (the arm's middle).
+  for (const name of ["left", "right"] as const) {
+    const upper = f[`${name}_upper_arm`];
+    const fore = f[`${name}_forearm`];
+    const hand = f[`${name}_hand`];
+    const wrist = fore.origin;
+    out.push(...jointedLimb(frameEnd(upper), upper.origin, wrist, p.limbRadius, c.arms, ["upper arm", "forearm"]));
     // Eight facets round: ten cost 120 more triangles for two hands a few pixels across, which the long falls' coils need.
-    out.push(ball(new THREE.Vector3(wrist.x, wrist.y, wrist.z - p.limbRadius * 1.3), p.limbRadius * 1.25, c.hands, undefined, 8));
+    out.push(ball(hand.origin.clone().addScaledVector(hand.z, p.limbRadius * 1.25), p.limbRadius * 1.25, c.hands, undefined, 8));
     if (outlined.has("wrists")) out.push(named(band(wrist.x, wrist.y, wrist.z, p.limbRadius * BAND_OUT, 1, c.ink), "band"));
   }
 
   // Neck and head.
-  const neckR = 0.045 * s;
-  out.push(trunk(neckBase - 0.01, headCentreZ - headR * 0.6, neckR, neckR, 1, c.neck));
+  const neckR = f.neck.size.x / 2;
+  out.push(trunk(f.neck.origin.z, frameEnd(f.neck).z, neckR, neckR, 1, c.neck));
   // Just above the torso's top and the shoulder bar (which rises 0.15 limb radii over the neck's base), so it shows.
   const collarZ = neckBase + p.limbRadius * 0.15 + BAND_HEIGHT;
   // In the clothing's tone off the neck (`collarEdge`): in the ink, a dark neck over dark clothing wore a white ring.
@@ -1143,7 +1166,9 @@ export function figureParts(p: FigureParams): Part[] {
     if (long) {
       const at = fall.getAttribute("position");
       const close = carried && p.hairTexture === "wavy" ? WAVY_FALL_CLOSE : fine ? 1.25 : 1.6;
-      for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * ((top - at.getZ(i)) / (top - bottom)) ** close);
+      // (Floored at 0: the top row comes out of the cylinder a rounding error above `top`, and a negative number to a
+      // fractional power is NaN, which emptied the fall's top rows and its bounding box.)
+      for (let i = 0; i < at.count; i++) at.setZ(i, top - (top - bottom) * Math.max(0, (top - at.getZ(i)) / (top - bottom)) ** close);
     }
     // Its outline down the fall: round the back of the head, in toward the nape, then out over the shoulders to its
     // ends (a bob flicks out a little). A straight cone from the crown to the ends hung as a flat slab. Curls and coils
@@ -1635,6 +1660,29 @@ export function figureParts(p: FigureParams): Part[] {
   return out;
 }
 
+/**
+ * A stand's own body, from the frames of `p` (the neutral body): a round foot on the floor, a post up to the hips,
+ * and a plain torso, shoulders, neck and head in the figure's shapes, with no arms, legs or face. In the figure's own
+ * frame; one colour, so the parts carry none.
+ */
+export function standParts(p: FigureParams): Part[] {
+  const f = builtFrames(p) as BodyFrames;
+  const s = p.height / 1.75;
+  const neckBase = frameEnd(f.torso).z;
+  const headR = f.head.size.z / 2;
+  const shoulderZ = frameEnd(f.left_upper_arm).z;
+  const neckR = f.neck.size.x / 2;
+  return [
+    trunk(0, 0.03 * s, 0.17 * s, 0.19 * s, 1, ""),
+    limb(new THREE.Vector3(0, 0, 0.03 * s), new THREE.Vector3(0, 0, f.waist.origin.z + 0.02 * s), 0.025 * s, ""),
+    trunk(f.waist.origin.z, f.torso.origin.z, p.hipHalf, p.waistHalf, 0.62, ""),
+    trunk(f.torso.origin.z, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, ""),
+    limb(new THREE.Vector3(-p.shoulderHalf * 0.9, 0, shoulderZ), new THREE.Vector3(p.shoulderHalf * 0.9, 0, shoulderZ), p.limbRadius * 1.35, ""),
+    trunk(f.neck.origin.z, frameEnd(f.neck).z, neckR, neckR, 1, ""),
+    ball(new THREE.Vector3(0, 0, f.head.origin.z + headR), headR, "", new THREE.Vector3(0.84, 0.95, 1), 14),
+  ];
+}
+
 /** The parts as one geometry, each part's colour in a `color` attribute (linear, as three.js expects). */
 export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
   const colour = new THREE.Color();
@@ -1657,11 +1705,8 @@ export function figureGeometry(p: FigureParams): THREE.BufferGeometry {
   const merged = mergeGeometries(geometries, false);
   for (const g of geometries) g.dispose();
   if (!merged) throw new Error("figure parts could not be merged");
-  if (p.posture === "reclining") {
-    // Lying on the back: head toward -y, face up, back just above the floor, centred on the spot.
-    merged.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-    merged.translate(0, p.height / 2, 0.13 * (p.height / 1.75));
-  }
+  // Lying on the back: head toward -y, face up, back just above the floor, centred on the spot.
+  if (p.posture === "reclining") merged.applyMatrix4(reclineMatrix(p));
   merged.computeBoundingBox();
   merged.computeBoundingSphere();
   return merged;
