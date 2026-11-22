@@ -1,36 +1,24 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 /**
- * The renderer every 3D room picture draws with (Dollhouse and Your eyes, and the layout preview), and the studio
- * room its surfaces mirror (`RoomSceneInput.environment`, made once in code, no downloaded picture). Free both with
- * `dispose`.
+ * The renderer every 3D room picture draws with (Dollhouse and Your eyes, and the layout preview). Light is in
+ * physical units (`lightUnits.ts`): a pixel is luminance in cd/m^2 before the room's exposure, which the caller sets
+ * from the scene (`RoomScene.exposure`). Free it with `dispose`.
  */
-export function roomRenderer(): { renderer: THREE.WebGLRenderer; environment: THREE.Texture; dispose: () => void } {
+export function roomRenderer(): { renderer: THREE.WebGLRenderer; dispose: () => void } {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setClearColor(0x14141a);
+  // Outside the room is nothing: black at any exposure.
+  renderer.setClearColor(0x000000);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  // Neutral keeps the game's colours as sent in ordinary light and rolls off highlights instead of clipping them.
-  renderer.toneMapping = THREE.NeutralToneMapping;
+  // AgX takes about 16 stops round middle grey and turns very bright light toward white, so a lamp's bulb or the sun
+  // stays its colour's white rather than a hue (three r187's ACES fit bends bright colours' hue; Neutral is made for
+  // ordinary light, not a range from moonlight to sun).
+  renderer.toneMapping = THREE.AgXToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   // Shadows depend on the room, not the camera: redrawn only when something in it is built, moves or is hidden
   // (the caller sets `shadowMap.needsUpdate`), not on every turn of the view.
   renderer.shadowMap.autoUpdate = false;
-  // Given to each scene's materials (`buildRoomScene`), not set as `scene.environment`, which would override each
-  // surface's own strength.
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const studio = new RoomEnvironment();
-  const environment = pmrem.fromScene(studio, 0.04).texture;
-  studio.dispose();
-  pmrem.dispose();
-  return {
-    renderer,
-    environment,
-    dispose: () => {
-      environment.dispose();
-      renderer.dispose();
-    },
-  };
+  return { renderer, dispose: () => renderer.dispose() };
 }

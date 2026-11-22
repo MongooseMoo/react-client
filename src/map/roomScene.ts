@@ -2,10 +2,13 @@ import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
 import { type FigureParams, type Footprint, figureParams, UNCOLOURED_GARMENT, wornParts } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { isLayoutPose, type LayoutFormPart, FRAME_NAMES, type FrameName, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
+import { type FinishResponse, type FinishSlot, isLayoutPose, type LayoutFormPart, FRAME_NAMES, type FrameName, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout, roomFinish, thingLight } from "../gmcp/Room";
 import { type BodyFrame, figureFrames, frameMatrix } from "./bodyFrames";
 import { FigureCache, figureMesh, headOutline, standParts } from "./figureMesh";
 import { CREASE_DEGREES, extrudeGeometry, loftGeometry, roundedBoxGeometry, sweepGeometry } from "./partShapes";
+import { kelvinColour, luminance } from "./lightColour";
+import { emitterLuminance, ev100, FILL_LUX, meteredLuminance, placedLights, roomExposure } from "./lightUnits";
+import { moveThingLights, type RoomLights, roomLights } from "./roomLighting";
 
 export { FigureCache };
 import {
@@ -303,19 +306,19 @@ export const FAMILY_COLOURS: Readonly<Record<string, number>> = {
 
 /**
  * How a surface takes the light. `clearcoat` is a thin glossy layer over it (varnish, glaze), `sheen` the soft
- * edge light of fabric, `opacity` below 1 lets what is behind show through, `glow` lights it from within by that
- * share of its colour. A surface that lets light through casts no shadow.
+ * edge light of fabric, `opacity` below 1 lets what is behind show through, `transmission` lets light pass through it
+ * refracted by `ior` (glass, water, ice: three.js's physical transmission). A surface that lets light through casts no
+ * shadow. Nothing glows of itself: only a thing that sends a light (`thingLight`) emits.
  */
 export interface Surface {
   roughness: number;
   metalness: number;
-  /** How strongly it mirrors the room (`RoomSceneInput.environment`) against a plain surface: metal more. Default 1. */
-  reflection?: number;
   clearcoat?: number;
   clearcoatRoughness?: number;
   sheen?: number;
   opacity?: number;
-  glow?: number;
+  transmission?: number;
+  ior?: number;
 }
 
 /** Everything of no known family: matte, as every surface was before materials were sent. */
@@ -323,8 +326,8 @@ export const PLAIN_SURFACE: Surface = { roughness: 0.8, metalness: 0.05 };
 
 /** Each material family's surface. */
 export const SURFACES: Readonly<Record<string, Surface>> = {
-  metal: { roughness: 0.25, metalness: 1, reflection: 2.6 },
-  glass: { roughness: 0.04, metalness: 0, opacity: 0.3, clearcoat: 1, clearcoatRoughness: 0.02 },
+  metal: { roughness: 0.25, metalness: 1 },
+  glass: { roughness: 0.02, metalness: 0, transmission: 1, ior: 1.5 },
   ceramic: { roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 },
   wood: { roughness: 0.6, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3 },
   leather: { roughness: 0.55, metalness: 0, sheen: 0.6 },
@@ -334,11 +337,23 @@ export const SURFACES: Readonly<Record<string, Surface>> = {
   plastic: { roughness: 0.32, metalness: 0 },
   flesh: { roughness: 0.6, metalness: 0 },
   plant: { roughness: 0.7, metalness: 0 },
-  liquid: { roughness: 0.05, metalness: 0, opacity: 0.75, clearcoat: 1, clearcoatRoughness: 0.02 },
-  ice: { roughness: 0.12, metalness: 0, opacity: 0.7, clearcoat: 1, clearcoatRoughness: 0.05 },
-  "energy field": { roughness: 0.2, metalness: 0, opacity: 0.45, glow: 0.9 },
+  liquid: { roughness: 0.03, metalness: 0, transmission: 0.9, ior: 1.33 },
+  ice: { roughness: 0.12, metalness: 0, transmission: 0.85, ior: 1.31 },
+  "energy field": { roughness: 0.2, metalness: 0, opacity: 0.45 },
   fungal_ingredient: { roughness: 0.8, metalness: 0 },
   grain_meal: { roughness: 0.95, metalness: 0 },
+};
+
+/**
+ * A room finish's surface by its sent `response`. The MOO sends the word, not numbers; these are the client's
+ * rendering of each word: matte rough, satin half, gloss smooth under a clear coat, metal a metal, glass transmissive.
+ */
+export const RESPONSE_SURFACES: Readonly<Record<FinishResponse, Surface>> = {
+  matte: { roughness: 0.9, metalness: 0 },
+  satin: { roughness: 0.5, metalness: 0 },
+  gloss: { roughness: 0.15, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 },
+  metal: { roughness: 0.3, metalness: 1 },
+  glass: { roughness: 0.02, metalness: 0, transmission: 1, ior: 1.5 },
 };
 
 /** A family's surface; PLAIN_SURFACE for none or one the client does not know. */
@@ -395,11 +410,6 @@ export interface RoomSceneInput {
   youId: string;
   /** Figure geometries kept across rebuilds; without one, every figure is built afresh and freed with the scene. */
   figures?: FigureCache;
-  /**
-   * What surfaces mirror and are softly lit by (a PMREM of a studio room, RoomLayout3D's), at ENVIRONMENT_INTENSITY
-   * times each surface's `reflection`. Owned by the caller: the scene does not free it.
-   */
-  environment?: THREE.Texture;
 }
 
 const hexString = (colour: number) => `#${colour.toString(16).padStart(6, "0")}`;
@@ -418,6 +428,10 @@ export interface RoomScene {
    * the middle of a thing's top. The first point is where the label hangs.
    */
   labelPoints: Map<string, THREE.Vector3[]>;
+  /** The room's lights from the wire (`roomLights`), and the sky dome when daylight reaches it. */
+  lights: RoomLights;
+  /** The renderer's exposure for this room's light (`roomExposure`). */
+  exposure: number;
   /** Each person's head as drawn (everything above the chin: hair, hat, antlers), as its box's eight corners. */
   heads: Map<string, THREE.Vector3[]>;
   /**
@@ -449,25 +463,26 @@ const boxCorners = (b: THREE.Box3): THREE.Vector3[] =>
 
 /** How rough a crystal body's surface is (a figure's is 0.8): low enough for a sheen on its faces. */
 export const CRYSTAL_ROUGHNESS = 0.35;
-/** A faint cool light from within a crystal body, so its faces turned from the light are not dead grey: it reads as
- * light passing through, without a transparent material (which a single merged mesh cannot sort). */
-export const CRYSTAL_GLOW = 0x1c2633;
 
 /** Builds meshes, sharing one material per colour within a scene. */
 class Builder {
   private materials = new Map<string, THREE.Material>();
 
-  constructor(private figures?: FigureCache, private environment?: THREE.Texture) {}
+  constructor(private figures?: FigureCache) {}
 
   /**
-   * A surface in `colour` as its material `family` takes the light (`surfaceFor`). `opacity` and `emissive` override
-   * the family's. A see-through surface shows both its faces and casts no shadow (`userData.castsShadow`);
-   * `doubleSided` shows both faces of an open skin, whose inside is seen through its openings.
+   * A surface in `colour` as its material `family` (`surfaceFor`) or a finish's `surface` takes the light. `opacity`
+   * overrides the surface's. `glow` makes it emit: luminance in cd/m^2 in a linear colour of luminance 1, for a thing
+   * that sends a light (`emitter`, marked `userData.emitter`) or a running screen. A see-through surface shows both its
+   * faces and casts no shadow (`userData.castsShadow`); `doubleSided` shows both faces of an open skin, whose inside is
+   * seen through its openings. Every surface is lit and mirrored by the room's captured light
+   * (`captureRoomLight`), set after the scene is built.
    */
-  material(colour: number, options: { opacity?: number; emissive?: number; family?: string; doubleSided?: boolean } = {}): THREE.Material {
-    const surface = surfaceFor(options.family);
+  material(colour: number, options: { opacity?: number; family?: string; surface?: Surface; glow?: Glow; doubleSided?: boolean } = {}): THREE.Material {
+    const surface = options.surface ?? surfaceFor(options.family);
     const opacity = options.opacity ?? surface.opacity;
-    const key = `${colour}:${opacity ?? 1}:${options.emissive ?? 0}:${options.family ?? ""}:${options.doubleSided ? 2 : 1}`;
+    const glow = options.glow;
+    const key = `${colour}:${opacity ?? 1}:${options.family ?? ""}:${JSON.stringify(options.surface ?? null)}:${glow ? `${glow.colour}:${glow.luminance}:${glow.emitter}` : ""}:${options.doubleSided ? 2 : 1}`;
     let material = this.materials.get(key);
     if (!material) {
       const params: THREE.MeshStandardMaterialParameters = {
@@ -476,12 +491,11 @@ class Builder {
         metalness: surface.metalness,
         transparent: opacity !== undefined,
         opacity: opacity ?? 1,
-        emissive: options.emissive ?? (surface.glow ? new THREE.Color(colour).multiplyScalar(surface.glow) : 0x000000),
+        emissive: glow ? new THREE.Color().setRGB(...glow.colour, THREE.LinearSRGBColorSpace) : 0x000000,
+        emissiveIntensity: glow ? glow.luminance : 1,
         depthWrite: opacity === undefined,
-        envMap: this.environment ?? null,
-        envMapIntensity: ENVIRONMENT_INTENSITY * (surface.reflection ?? 1),
       };
-      material = surface.clearcoat || surface.sheen
+      material = surface.clearcoat || surface.sheen || surface.transmission
         ? new THREE.MeshPhysicalMaterial({
           ...params,
           clearcoat: surface.clearcoat ?? 0,
@@ -489,9 +503,13 @@ class Builder {
           sheen: surface.sheen ?? 0,
           sheenRoughness: 0.8,
           sheenColor: new THREE.Color(colour).lerp(new THREE.Color(0xffffff), 0.3),
+          transmission: surface.transmission ?? 0,
+          ior: surface.ior ?? 1.5,
+          thickness: surface.transmission ? 0.01 : 0,
         })
         : new THREE.MeshStandardMaterial(params);
-      if (options.doubleSided || (surface.opacity !== undefined && options.opacity === undefined)) {
+      if (glow?.emitter) material.userData.emitter = true;
+      if (options.doubleSided || ((surface.opacity !== undefined || surface.transmission) && options.opacity === undefined)) {
         material.side = THREE.DoubleSide;
         // A see-through thing's base, or an open skin's inside, may lie in the floor's (or a shelf's) plane: pulled a
         // hair toward the camera, it wins over that face instead of striping with it. The selection glow's offset is
@@ -500,7 +518,7 @@ class Builder {
         material.polygonOffsetFactor = -1;
         material.polygonOffsetUnits = -1;
       }
-      material.userData.castsShadow = opacity === undefined;
+      material.userData.castsShadow = opacity === undefined && !surface.transmission;
       this.materials.set(key, material);
     }
     return material;
@@ -530,10 +548,9 @@ class Builder {
     const key = crystal ? "figure-crystal" : "figure";
     let material = this.materials.get(key);
     if (!material) {
-      const lit = { envMap: this.environment ?? null, envMapIntensity: ENVIRONMENT_INTENSITY };
       material = crystal
-        ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: CRYSTAL_ROUGHNESS, metalness: 0, flatShading: true, emissive: CRYSTAL_GLOW, ...lit })
-        : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05, ...lit });
+        ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: CRYSTAL_ROUGHNESS, metalness: 0, flatShading: true })
+        : new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8, metalness: 0.05 });
       this.materials.set(key, material);
     }
     return material;
@@ -786,12 +803,27 @@ function bodyQuaternion(pose: LayoutPose): THREE.Quaternion {
 
 const centre = (b: Bounds) => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2] as const;
 
-/** The parts of one thing that is not a person, by its form. */
-function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
+/** How a surface emits: luminance in cd/m^2 in a linear colour of luminance 1; `emitter` for a sent light's glow. */
+interface Glow {
+  colour: [number, number, number];
+  luminance: number;
+  emitter: boolean;
+}
+
+/** How a thing glows: a thing sending a light that is on, at its emitter's luminance in the light's colour. */
+function thingGlow(thing: LayoutThing): Glow | undefined {
+  const light = thingLight(thing);
+  if (!light?.on || light.lumens <= 0) return undefined;
+  return { colour: kelvinColour(light.cct), luminance: emitterLuminance(light), emitter: true };
+}
+
+/** The parts of one thing that is not a person, by its form. `screenGlow` is a running screen's luminance, cd/m^2. */
+function thingMeshes(builder: Builder, placed: PlacedThing, screenGlow: number): THREE.Mesh[] {
   const { thing, bounds: b } = placed;
   const colour = thingColour(thing);
   const family = thingFamily(thing);
-  const surface = builder.material(colour, { family });
+  const glow = thingGlow(thing);
+  const surface = builder.material(colour, { family, glow });
   const w = b.x1 - b.x0;
   const d = b.y1 - b.y0;
   const h = b.z1 - b.z0;
@@ -846,7 +878,11 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
       ];
     }
     case "screen":
-      return [builder.box(b, builder.material(SCREEN_COLOUR, { emissive: thing.state?.mode === "running" ? 0x0a1020 : 0 }), "screen")];
+      // A running screen glows: by its own sent light where it has one, else at the room's metered luminance
+      // (Frostbite p.87 sets an emissive relative to the current exposure), so it reads as on at any light level.
+      return [builder.box(b, builder.material(SCREEN_COLOUR, {
+        glow: glow ?? (thing.state?.mode === "running" ? { colour: SCREEN_GLOW, luminance: screenGlow, emitter: false } : undefined),
+      }), "screen")];
     case "door": {
       // The leaf, and a knob near its free end on the side facing the middle of the room.
       const alongX = w >= d;
@@ -866,7 +902,7 @@ function thingMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
 
 /** Custom native world shapes stay in their supplied frame. */
 function collisionMeshes(builder: Builder, placed: PlacedThing): THREE.Mesh[] {
-  const material = builder.material(thingColour(placed.thing), { family: thingFamily(placed.thing) });
+  const material = builder.material(thingColour(placed.thing), { family: thingFamily(placed.thing), glow: thingGlow(placed.thing) });
   return placed.footprints.map((f) => f.type === "circle"
     ? builder.sphere([f.cx, f.cy, (f.bounds.z0 + f.bounds.z1) / 2], f.r, material, "sphere")
     : builder.box(f.bounds, material, "box"));
@@ -889,11 +925,10 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   const group = new THREE.Group();
   group.name = `${wall} wall`;
   group.userData.wall = wall;
-  group.userData.finish = layout.finishes?.wall;
-  const solid = builder.material(WALL_COLOUR);
-  // Lit from within a little, so the orange reads as orange in shade.
-  const doorway = builder.material(DOORWAY_COLOUR, { opacity: 0.55, emissive: 0x6a2e08 });
-  const sillMaterial = builder.material(DOORWAY_COLOUR, { emissive: 0x8a3c0a });
+  group.userData.finish = roomFinish(layout, "wall")?.name;
+  const solid = finishMaterial(builder, layout, "wall", WALL_COLOUR);
+  const doorway = builder.material(DOORWAY_COLOUR, { opacity: 0.55 });
+  const sillMaterial = builder.material(DOORWAY_COLOUR);
 
   const openings = layout.exits
     .filter((exit) => exitWall(exit, layout.size) === wall)
@@ -928,25 +963,41 @@ function buildWall(builder: Builder, layout: RoomLayout, wall: Wall, exits: THRE
   return group;
 }
 
-export function buildRoomScene({ layout, placed, youId, figures, environment }: RoomSceneInput): RoomScene {
-  const builder = new Builder(figures, environment);
+/** A room surface in its sent finish's colour and response, else `fallback`, matte, as before finishes had colours. */
+function finishMaterial(builder: Builder, layout: RoomLayout, slot: FinishSlot, fallback: number): THREE.Material {
+  const finish = roomFinish(layout, slot);
+  return builder.material(finish?.colour ? hexToNumber(finish.colour) : fallback, finish?.response ? { surface: RESPONSE_SURFACES[finish.response] } : {});
+}
+
+/** A running screen's glow colour: the old fixed tint's hue (linear), scaled to luminance 1. */
+const SCREEN_GLOW: [number, number, number] = (() => {
+  const c = new THREE.Color(0x0a1020);
+  const y = luminance([c.r, c.g, c.b]);
+  return [c.r / y, c.g / y, c.b / y];
+})();
+
+export function buildRoomScene({ layout, placed, youId, figures }: RoomSceneInput): RoomScene {
+  const builder = new Builder(figures);
   const [w, d] = layout.size;
   const root = new THREE.Group();
   const exits: THREE.Object3D[] = [];
 
-  root.add(new THREE.HemisphereLight(0xffffff, 0x444450, HEMISPHERE_INTENSITY));
-  root.add(keyLight(layout.size));
+  const lights = roomLights(layout, placed);
+  for (const object of lights.objects) root.add(object);
+  const exposure = roomExposure(lights.light);
+  // Frostbite p.87: L = 2^(EV100 - 3), the luminance a meter reads at this exposure.
+  const screenGlow = 2 ** (ev100(meteredLuminance(lights.light?.lux ?? FILL_LUX)) - 3);
 
-  const floor = builder.box({ x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -0.02, z1: 0 }, builder.material(FLOOR_COLOUR), "floor");
-  floor.userData.finish = layout.finishes?.floor;
+  const floor = builder.box({ x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -0.02, z1: 0 }, finishMaterial(builder, layout, "floor", FLOOR_COLOUR), "floor");
+  floor.userData.finish = roomFinish(layout, "floor")?.name;
   root.add(floor);
   // Seen only from your eyes; the dollhouse looks in from above.
   const ceiling = builder.box(
     { x0: -w / 2 - WALL_THICKNESS, x1: w / 2 + WALL_THICKNESS, y0: -d / 2 - WALL_THICKNESS, y1: d / 2 + WALL_THICKNESS, z0: layout.size[2], z1: layout.size[2] + 0.02 },
-    builder.material(CEILING_COLOUR),
+    finishMaterial(builder, layout, "ceiling", CEILING_COLOUR),
     "ceiling",
   );
-  ceiling.userData.finish = layout.finishes?.ceiling;
+  ceiling.userData.finish = roomFinish(layout, "ceiling")?.name;
   root.add(ceiling);
 
   // Floor grid at the plan's scale-bar step, so both views measure alike.
@@ -1037,7 +1088,7 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
             const colour = fitting && !colourHex(part.colour) ? new THREE.Color(look.colour).multiplyScalar(0.78).getHex() : look.colour;
             const geometry = partGeometry(part);
             // An open skin (a loft with an opening and no wall) shows its inside through the opening.
-            const material = builder.material(colour, { family: look.family, doubleSided: geometry.userData.open === true });
+            const material = builder.material(colour, { family: look.family, doubleSided: geometry.userData.open === true, glow: thingGlow(p.thing) });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.userData.part = fitting?.name ?? role ?? "form";
             mesh.matrixAutoUpdate = false;
@@ -1048,14 +1099,14 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
             if (role && p.thing.lifetime) mesh.userData.inspect = [p.thing.id, p.thing.lifetime, role];
             group.add(mesh);
           }
-        } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing), { family: thingFamily(p.thing) }), "box"));
-        else for (const mesh of thingMeshes(builder, local)) group.add(mesh);
+        } else if (thingForm(p.thing) === "box") group.add(builder.box(local.bounds, builder.material(thingColour(p.thing), { family: thingFamily(p.thing), glow: thingGlow(p.thing) }), "box"));
+        else for (const mesh of thingMeshes(builder, local, screenGlow)) group.add(mesh);
         group.quaternion.copy(bodyQuaternion(pose));
         group.position.fromArray(pose.centre_m);
       } else if (isLayoutPose(pose)) {
         for (const mesh of collisionMeshes(builder, p)) group.add(mesh);
       } else {
-        for (const mesh of thingMeshes(builder, p)) group.add(mesh);
+        for (const mesh of thingMeshes(builder, p, screenGlow)) group.add(mesh);
       }
       labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, p.bounds.z1)]);
     }
@@ -1078,62 +1129,38 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
     markers.set(id, marker);
   }
   root.add(rings);
-  // Things and people cast shadows and take them; the floor and walls take them. The ceiling casts none (from your
-  // eyes it would shade the whole room), nor does anything see-through.
+  // Things and people cast shadows and take them; the floor, walls and ceiling take them. Walls and ceiling cast none:
+  // the wire gives no windows, so the sun and sky light reach in as the MOO says they do rather than being shut out.
+  // Nothing see-through casts one, nor does a thing that sends a light: the light sits at its body's centre, inside
+  // its own drawing.
   floor.receiveShadow = true;
-  for (const wall of Object.values(walls)) wall.traverse((object) => { object.receiveShadow = true; });
-  for (const group of things.values()) {
+  for (const object of [ceiling, ...Object.values(walls)]) object.traverse((o) => { o.receiveShadow = true; });
+  const emitting = new Set(placedLights(placed).filter((l) => l.light.on).map((l) => l.thingId));
+  for (const [id, group] of things) {
     group.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       object.receiveShadow = true;
-      object.castShadow = (object.material as THREE.Material).userData.castsShadow !== false;
+      object.castShadow = !emitting.has(id) && (object.material as THREE.Material).userData.castsShadow !== false;
     });
   }
   root.updateMatrixWorld(true);
-  return { root, walls, ceiling, exits, things, labelPoints, heads, markers };
+  return { root, walls, ceiling, exits, things, labelPoints, heads, markers, lights, exposure };
 }
 
-/** The sky's share of the light; the key light's; and how much the room's reflections (`RoomSceneInput.environment`) add. */
-export const HEMISPHERE_INTENSITY = 0.35;
-export const KEY_LIGHT_INTENSITY = 1.6;
-export const ENVIRONMENT_INTENSITY = 0.5;
-/** Shadow map texels on a side, and how many texels wide a shadow's soft edge is. */
-export const SHADOW_MAP_SIZE = 2048;
-const SHADOW_SOFTNESS = 3;
-
 /**
- * The key light, high over the room's south-east, casting soft shadows. Its shadow camera is fitted round the
- * room's box as the light sees it, so the shadow map's texels are spent on the room and nothing in it is cut off.
+ * Keeps the view's own marks (the floor grid, tiny-figure rings, the selection outline: unlit materials) looking the
+ * same in every room: their colour is divided by the room's exposure, so after exposure they are their own colour
+ * whether the room is sunlit or dark. Run again when a mark's colour is changed.
  */
-export function keyLight(size: LayoutVector): THREE.DirectionalLight {
-  const [w, d, h] = size;
-  const sun = new THREE.DirectionalLight(0xffffff, KEY_LIGHT_INTENSITY);
-  sun.position.set(w * 0.4, -d * 0.6, Math.max(6, h + 2));
-  sun.castShadow = true;
-  // The shadow camera looks from the light at the room's middle (its target, the origin), with three's default up.
-  const view = new THREE.Matrix4().lookAt(sun.position, new THREE.Vector3(), THREE.Object3D.DEFAULT_UP)
-    .setPosition(sun.position).invert();
-  const box = new THREE.Box3();
-  for (const x of [-w / 2, w / 2]) for (const y of [-d / 2, d / 2]) for (const z of [0, h]) {
-    box.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(view));
-  }
-  const margin = 0.1;
-  const camera = sun.shadow.camera;
-  camera.left = box.min.x - margin;
-  camera.right = box.max.x + margin;
-  camera.bottom = box.min.y - margin;
-  camera.top = box.max.y + margin;
-  // The camera looks down its -z: the room lies between -max.z and -min.z in front of it.
-  camera.near = Math.max(0.05, -box.max.z - margin);
-  camera.far = -box.min.z + margin;
-  camera.updateProjectionMatrix();
-  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-  sun.shadow.radius = SHADOW_SOFTNESS;
-  const texel = Math.max(camera.right - camera.left, camera.top - camera.bottom) / SHADOW_MAP_SIZE;
-  // Pushed off each surface by a texel and a half along its normal, so a face never shades itself (acne).
-  sun.shadow.normalBias = texel * 1.5;
-  sun.shadow.bias = -0.0002;
-  return sun;
+export function exposeOverlays(object: THREE.Object3D, exposure: number): void {
+  object.traverse((o) => {
+    if (!(o instanceof THREE.Mesh || o instanceof THREE.LineSegments)) return;
+    const m = o.material as THREE.MeshBasicMaterial | THREE.LineBasicMaterial;
+    if (!(m instanceof THREE.MeshBasicMaterial || m instanceof THREE.LineBasicMaterial)) return;
+    const base = (m.userData.overlayColour as THREE.Color | undefined) ?? m.color.clone();
+    m.userData.overlayColour = base;
+    m.color.copy(base).multiplyScalar(1 / exposure);
+  });
 }
 
 /** A figure shorter than this on screen, CSS pixels, gets its floor ring; from MARKER_FULL_PX down the ring is at full strength. */
@@ -1196,6 +1223,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
       a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
       old.thing.appearance !== next.thing.appearance || old.thing.stand !== next.thing.stand || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
+      old.thing.light !== next.thing.light ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
       JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
     const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(
@@ -1206,6 +1234,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
     const group = room.things.get(next.thing.id);
     if (!group) return false;
     group.applyMatrix4(delta);
+    moveThingLights(room.root, next.thing.id, delta);
     if (isPerson(next.thing)) {
       for (const point of room.heads.get(next.thing.id) ?? []) point.applyMatrix4(delta);
       for (const point of room.labelPoints.get(next.thing.id) ?? []) point.applyMatrix4(delta);

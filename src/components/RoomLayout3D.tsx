@@ -2,9 +2,13 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
-import type { LayoutVector, RoomLayout } from "../gmcp/Room";
+import { type LayoutVector, type RoomLayout, roomLight } from "../gmcp/Room";
 import {
   type Box,
   displayName,
@@ -30,6 +34,7 @@ import {
   DOLLHOUSE_NEAR,
   disposeRoomScene,
   disposeSelectionOutline,
+  exposeOverlays,
   pickables,
   scenePick,
   selectionOutline,
@@ -57,6 +62,9 @@ import {
   zoomedFovBy,
 } from "../map/roomScene";
 import { roomRenderer } from "../map/roomRenderer";
+import { needsNightVision } from "../map/lightUnits";
+import { blurSigmaPx, NightVisionShader } from "../map/nightVision";
+import { captureRoomLight } from "../map/roomLighting";
 import { useSpatialStore } from "../stores/spatialStore";
 
 /**
@@ -120,8 +128,12 @@ interface Stage {
   placed: PlacedThing[];
   /** People's figure geometries, reused while their look is unchanged. */
   figures: FigureCache;
-  /** The studio room every surface mirrors (`RoomSceneInput.environment`), made once with the renderer. */
-  environment: THREE.Texture;
+  /** The current room's light bounced off its own surfaces (`captureRoomLight`), which every surface takes. */
+  environment: THREE.Texture | null;
+  /** The night-vision post step, made the first time a room is dim enough to need it. */
+  night: { composer: EffectComposer; pass: ShaderPass } | null;
+  /** Whether the current room is drawn through `night`. */
+  nightVision: boolean;
   labelObjects: Map<string, CSS2DObject>;
   /** Labels' drawn sizes (`labelSize`). */
   labelSizes: Map<string, { width: number; height: number }>;
@@ -130,6 +142,42 @@ interface Stage {
   /** The outline round the selected thing or person, when it is drawn. */
   selection: THREE.Group | null;
   render: () => void;
+}
+
+/**
+ * Sets the renderer for a newly built room's light: its exposure, the night-vision step when the room is below
+ * photopic, and the light bounced off its own surfaces, captured with the room whole (walls uncut, ceiling on) and
+ * without the view's markers, outlines and doorway overlays.
+ */
+function lightStage(stage: Stage, room: RoomScene, layout: RoomLayout) {
+  stage.renderer.toneMappingExposure = room.exposure;
+  stage.nightVision = needsNightVision(roomLight(layout));
+  if (stage.nightVision && !stage.night) {
+    const size = stage.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(stage.renderer, target);
+    composer.addPass(new RenderPass(stage.scene, stage.camera));
+    const pass = new ShaderPass(NightVisionShader);
+    composer.addPass(pass);
+    composer.addPass(new OutputPass());
+    composer.setSize(stage.renderer.domElement.clientWidth || size.x, stage.renderer.domElement.clientHeight || size.y);
+    stage.night = { composer, pass };
+  }
+  const walls = Object.values(room.walls);
+  const heights = walls.map((w) => w.scale.z);
+  const ceilingShown = room.ceiling.visible;
+  for (const w of walls) w.scale.z = 1;
+  room.ceiling.visible = true;
+  room.root.updateMatrixWorld(true);
+  const overlays: THREE.Object3D[] = [...room.exits, ...room.markers.values()];
+  room.root.traverse((o) => { if (o.userData.part === "grid") overlays.push(o); });
+  if (stage.selection) overlays.push(stage.selection);
+  const previous = stage.environment;
+  stage.environment = captureRoomLight(stage.renderer, stage.scene, room.root, layout.size, overlays);
+  previous?.dispose();
+  walls.forEach((w, i) => { w.scale.z = heights[i]; });
+  room.ceiling.visible = ceilingShown;
+  room.root.updateMatrixWorld(true);
 }
 
 /** Outlines the selected thing or person where it now is, marks its label, and clears the last outline. */
@@ -142,6 +190,7 @@ function showSelection(stage: Stage, selectedId: string | null) {
   const drawn = chosen && stage.room?.things.get(chosen.thing.id);
   if (!chosen || !drawn?.visible) return;
   stage.selection = selectionOutline(chosen.bounds, drawn);
+  if (stage.room) exposeOverlays(stage.selection, stage.room.exposure);
   stage.scene.add(stage.selection);
 }
 
@@ -174,7 +223,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (!frame || !supported) return;
-    const { renderer, environment, dispose: disposeRenderer } = roomRenderer();
+    const { renderer, dispose: disposeRenderer } = roomRenderer();
     renderer.domElement.setAttribute("aria-hidden", "true");
     frame.appendChild(renderer.domElement);
     const labels = new CSS2DRenderer();
@@ -203,7 +252,9 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       layout: null,
       placed: [],
       figures: new FigureCache(),
-      environment,
+      environment: null,
+      night: null,
+      nightVision: false,
       labelObjects: new Map(),
       labelSizes: new Map(),
       personLabels: [],
@@ -213,7 +264,11 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
           cutWalls(stage.room, layoutRef.current, camera.position, modeRef.current);
           updateTinyMarkers(stage.room, camera, frame.clientWidth, frame.clientHeight, modeRef.current);
         }
-        renderer.render(scene, camera);
+        if (stage.nightVision && stage.night) {
+          stage.night.pass.uniforms.sigma0.value = blurSigmaPx(camera.fov, renderer.domElement.height);
+          stage.night.pass.uniforms.texel.value.set(1 / renderer.domElement.width, 1 / renderer.domElement.height);
+          stage.night.composer.render();
+        } else renderer.render(scene, camera);
         placeVisibleLabels(stage);
         labels.render(scene, camera);
       },
@@ -226,6 +281,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       const height = frame.clientHeight;
       if (width === 0 || height === 0) return;
       renderer.setSize(width, height, false);
+      stage.night?.composer.setSize(width, height);
       renderer.domElement.style.width = "100%";
       renderer.domElement.style.height = "100%";
       labels.setSize(width, height);
@@ -249,6 +305,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       if (stage.selection) disposeSelectionOutline(stage.selection);
       if (stage.room) disposeRoomScene(stage.room);
       stage.figures.dispose();
+      stage.environment?.dispose();
+      stage.night?.composer.dispose();
       disposeRenderer();
       renderer.domElement.remove();
       labels.domElement.remove();
@@ -322,7 +380,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     if (!stage) return;
     if (mode === "dollhouse") stage.controls.maxDistance = dollhouseMaxDistance(layout);
     if (stage.room && stage.layout?.size === layout.size && stage.layout.exits === layout.exits &&
-      stage.layout.finishes === layout.finishes && updateRoomBodies(stage.room, stage.placed, placed)) {
+      stage.layout.finishes === layout.finishes && stage.layout.light === layout.light && updateRoomBodies(stage.room, stage.placed, placed)) {
       stage.layout = layout;
       stage.placed = placed;
       for (const [id, object] of stage.labelObjects) {
@@ -344,11 +402,12 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     // A door or drawer that moved swings or slides there from where it was drawn, unless motion is reduced.
     stage.stopJoints();
     const drawnJoints = previous ? jointPositions(previous) : new Map<string, number>();
-    const room = buildRoomScene({ layout, placed, youId, figures: stage.figures, environment: stage.environment });
+    const room = buildRoomScene({ layout, placed, youId, figures: stage.figures });
     stage.room = room;
     stage.layout = layout;
     stage.placed = placed;
     stage.scene.add(room.root);
+    lightStage(stage, room, layout);
     // In your own eyes you are not drawn.
     const you = room.things.get(youId);
     if (you) you.visible = mode !== "eyes";
@@ -385,6 +444,8 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       group.add(object);
       stage.labelObjects.set(id, object);
     }
+    // The grid and the rings (their colours now set) keep their look at this room's exposure.
+    exposeOverlays(room.root, room.exposure);
     showSelection(stage, selectedIdRef.current);
     // Set before the first frame, so a moving part is first drawn where it was.
     const moved = () => {

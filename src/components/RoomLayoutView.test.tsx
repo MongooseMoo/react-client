@@ -44,7 +44,7 @@ describe("RoomLayoutView", () => {
 
   it("shows supplied finishes, and support, front and device state in the picture's titles, quietly", () => {
     const layout = sampleLayout();
-    layout.finishes = { floor: "oak", wall: "drywall" };
+    layout.finishes = { floor: { name: "oak", colour: "#a0703f", response: "satin" }, wall: { name: "drywall" } };
     layout.things.push({ id: "#panel", name: "control panel", kind: "object", fixed: false, mounted: false,
       shapes: [{ box: [[-0.2, 0.2], [0.4, 0.6], [1.05, 1.2]] }],
       relation: { kind: "on", target: "#5678", text: "on oak table" },
@@ -56,6 +56,17 @@ describe("RoomLayoutView", () => {
     expect(screen.getByText("drywall")).toBeDefined();
     expect(screen.getByRole("img").querySelector('[data-id="#panel"] title')?.textContent).toBe(
       "control panel, on oak table, faces north, closed, offline");
+    expect(document.querySelector("[aria-live]")).toBeNull();
+  });
+
+  it("says the room's light in words when the MOO sends it, and nothing when it does not", () => {
+    const { unmount } = render(view(sampleLayout()));
+    expect(screen.queryByText(/^Light:/)).toBeNull();
+    unmount();
+    const layout = sampleLayout();
+    layout.light = { lux: 0.2, sky: { moon: { dir: [0, 0.6, 0.8], lux: 0.25, cct: 4100 }, diffuse_lux: 0.01, cct: 9000 } };
+    render(view(layout));
+    expect(screen.getByText("Light: dim (about 0.2 lux), mostly moonlight.")).toBeDefined();
     expect(document.querySelector("[aria-live]")).toBeNull();
   });
 

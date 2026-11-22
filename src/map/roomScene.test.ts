@@ -32,9 +32,9 @@ import {
   eyesPose,
   FigureCache,
   FAMILY_COLOURS,
-  keyLight,
   NEUTRAL,
   PLAIN_SURFACE,
+  RESPONSE_SURFACES,
   SPECIES,
   SURFACES,
   surfaceFor,
@@ -57,6 +57,9 @@ import {
   zoomedFovBy,
 } from "./roomScene";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { luminance } from "./lightColour";
+import { ev100, exposureFor, FILL_LUX, meteredLuminance } from "./lightUnits";
+import { directionalLight } from "./roomLighting";
 
 const build = (layout: RoomLayout, youId = "#99") =>
   buildRoomScene({ layout, placed: placeThings(layout), youId });
@@ -211,7 +214,7 @@ describe("buildRoomScene", () => {
     expect(colour(steel)).toBe(SPECIES.steel.colour);
     expect(surface(steel).metalness).toBe(1);
     expect(colour(glass)).toBe(SPECIES.glass.colour);
-    expect(surface(glass).transparent).toBe(true);
+    expect(surface(glass).transmission).toBe(1);
     expect(surface(glass).side).toBe(THREE.DoubleSide);
     // Its base, in the floor's plane, wins over the floor instead of striping with it.
     expect(surface(glass).polygonOffset).toBe(true);
@@ -233,38 +236,108 @@ describe("buildRoomScene", () => {
     disposeRoomScene(scene);
   });
 
-  it("lets every surface and figure mirror the given environment, metal most strongly", () => {
-    const layout = livingRoomLayout();
-    const environment = new THREE.Texture();
-    layout.things = [...layout.things, { ...layout.things[0], id: "#pot", kind: "object",
-      pose: { centre_m: [0, 0, 0.5], dimensions_m: [1, 1, 1], body_quaternion: [1, 0, 0, 0], box: true },
-      form_parts: [{ shape: "box", center: [0, 0, 0], size: [1, 1, 1], material: { species: "steel", family: "metal" } }] }];
-    const scene = buildRoomScene({ layout, placed: placeThings(layout), youId: "#99", environment });
-    const lit = (mesh: THREE.Mesh) => mesh.material as THREE.MeshStandardMaterial;
-    const pot = lit(meshes(scene.things.get("#pot"))[0]);
-    const person = lit(meshes(scene.things.get("#9"))[0]);
-    expect(pot.envMap).toBe(environment);
-    expect(person.envMap).toBe(environment);
-    expect(pot.envMapIntensity).toBeGreaterThan(person.envMapIntensity);
-    // The scene does not free what it was given.
+  it("lights the room only from the wire: no invented sun, sky or studio, and a neutral fill when no light is sent", () => {
+    const scene = build(livingRoomLayout());
+    const lights = scene.root.children.filter((child): child is THREE.Light => child instanceof THREE.Light);
+    expect(lights.map((l) => l.constructor.name)).toEqual(["HemisphereLight"]);
+    const fill = lights[0] as THREE.HemisphereLight;
+    expect(fill.intensity).toBe(FILL_LUX);
+    expect(fill.color.getHex()).toBe(0xffffff);
+    expect(fill.castShadow).toBe(false);
+    // Nothing mirrors an environment until the room's own light is captured (`captureRoomLight`).
+    const materials = new Set<THREE.Material>();
+    scene.root.traverse((o) => { if (o instanceof THREE.Mesh) materials.add(o.material as THREE.Material); });
+    for (const m of materials) if (m instanceof THREE.MeshStandardMaterial) expect(m.envMap).toBeNull();
+    expect(scene.exposure).toBeCloseTo(exposureFor(ev100(meteredLuminance(FILL_LUX))), 12);
     disposeRoomScene(scene);
-    expect(environment.source).toBeDefined();
-    environment.dispose();
+  });
+
+  it("puts each sent light that is on at its thing, in candela, and makes only that thing glow", () => {
+    const layout = livingRoomLayout();
+    const lamp = { ...layout.things[0], id: "#lamp", name: "brass lamp", kind: "object" as const, classes: [],
+      pose: { centre_m: [1, 0.5, 1.2] as [number, number, number], dimensions_m: [0.3, 0.3, 0.4] as [number, number, number], body_quaternion: [1, 0, 0, 0] as [number, number, number, number], box: true },
+      light: { lumens: 800, cct: 2700, shape: "point", radius: 0.05, on: true } };
+    const spot = { ...lamp, id: "#spot", name: "spotlight", pose: { ...lamp.pose, centre_m: [-1, 0, 2] as [number, number, number] },
+      light: { lumens: 600, cct: 4000, shape: "spot", cone_deg: 40, dir: [0, 0, -1], on: true } };
+    const off = { ...lamp, id: "#off", name: "unlit lamp", light: { ...lamp.light, on: false } };
+    layout.things = [...layout.things, lamp, spot, off];
+    layout.light = { lux: 120 };
+    const scene = buildRoomScene({ layout, placed: placeThings(layout), youId: "#99" });
+    const point = scene.root.children.find((c): c is THREE.PointLight => c instanceof THREE.PointLight);
+    const cone = scene.root.children.find((c): c is THREE.SpotLight => c instanceof THREE.SpotLight);
+    expect(scene.root.children.some((c) => c instanceof THREE.AmbientLight || c instanceof THREE.HemisphereLight)).toBe(false);
+    expect(point?.intensity).toBeCloseTo(800 / (4 * Math.PI), 9);
+    expect(point?.decay).toBe(2);
+    expect(point?.position.toArray()).toEqual([1, 0.5, 1.2]);
+    expect(cone?.intensity).toBeCloseTo(600 / (2 * Math.PI * (1 - Math.cos((20 * Math.PI) / 180))), 9);
+    expect(cone?.angle).toBeCloseTo((20 * Math.PI) / 180, 12);
+    expect(cone?.target.position.toArray()).toEqual([-1, 0, 1]);
+    const glowOf = (id: string) => meshes(scene.things.get(id)).map((m) => (m.material as THREE.MeshStandardMaterial).emissiveIntensity *
+      (m.material as THREE.MeshStandardMaterial).emissive.getHex());
+    // A 5 cm ball of 800 lm: L = 800 / (4 pi 0.05^2 pi).
+    const lampMaterial = meshes(scene.things.get("#lamp"))[0].material as THREE.MeshStandardMaterial;
+    expect(lampMaterial.emissiveIntensity).toBeCloseTo(800 / (4 * Math.PI * 0.05 * 0.05 * Math.PI), 6);
+    expect(lampMaterial.userData.emitter).toBe(true);
+    expect(glowOf("#off").every((g) => g === 0)).toBe(true);
+    // A lit thing casts no shadow (its light is inside it); the unlit one does.
+    expect(meshes(scene.things.get("#lamp")).every((m) => !m.castShadow)).toBe(true);
+    expect(meshes(scene.things.get("#off")).every((m) => m.castShadow)).toBe(true);
+    // Nothing else glows: walls, floor, doorways.
+    const others = [...Object.values(scene.walls).flatMap((w) => meshes(w)), ...scene.exits.filter((e): e is THREE.Mesh => e instanceof THREE.Mesh)];
+    expect(others.every((m) => (m.material as THREE.MeshStandardMaterial).emissive.getHex() === 0)).toBe(true);
+    expect(scene.exposure).toBeCloseTo(exposureFor(ev100(meteredLuminance(120))), 12);
+    disposeRoomScene(scene);
+  });
+
+  it("draws daylight as the sun, the sky's light and a sky dome when light.sky is sent", () => {
+    const layout = livingRoomLayout();
+    const up = Math.sin((40 * Math.PI) / 180);
+    const across = Math.cos((40 * Math.PI) / 180);
+    layout.light = { lux: 60000, sky: { sun: { dir: [across, 0, up], lux: 90000, cct: 5500 }, diffuse_lux: 15000, cct: 7000 } };
+    const scene = build(layout);
+    const sun = scene.root.children.find((c): c is THREE.DirectionalLight => c instanceof THREE.DirectionalLight);
+    const sky = scene.root.children.find((c): c is THREE.HemisphereLight => c instanceof THREE.HemisphereLight);
+    expect(sun?.name).toBe("sun");
+    expect(sun?.intensity).toBe(90000);
+    expect(sun?.castShadow).toBe(true);
+    const toward = sun ? sun.position.clone().sub(sun.target.position).normalize() : new THREE.Vector3();
+    expect(toward.x).toBeCloseTo(across, 9);
+    expect(toward.z).toBeCloseTo(up, 9);
+    // The sky light on a level surface is diffuse_lux (its colour has luminance 1).
+    expect(sky ? luminance([sky.color.r, sky.color.g, sky.color.b]) * sky.intensity : 0).toBeCloseTo(15000, 3);
+    expect(scene.lights.sky?.name).toBe("sky");
+    disposeRoomScene(scene);
+  });
+
+  it("colours and finishes the floor, walls and ceiling as sent, and drops a malformed finish", () => {
+    const layout = livingRoomLayout();
+    layout.finishes = { floor: { name: "oak", colour: "#a0703f", response: "satin" }, wall: { name: "steel plate", response: "metal" }, ceiling: "plaster" };
+    const scene = build(layout);
+    const floor = scene.root.children.find((child) => child.userData.part === "floor") as THREE.Mesh;
+    const floorMaterial = floor.material as THREE.MeshStandardMaterial;
+    expect(floorMaterial.color.getHexString()).toBe("a0703f");
+    expect(floorMaterial.roughness).toBe(RESPONSE_SURFACES.satin.roughness);
+    expect(floor.userData.finish).toBe("oak");
+    const wall = meshes(scene.walls.north)[0].material as THREE.MeshStandardMaterial;
+    expect(wall.metalness).toBe(1);
+    expect(scene.ceiling.userData.finish).toBeUndefined();
+    disposeRoomScene(scene);
   });
 
   it("gives each material family its own surface, and anything else the plain one", () => {
     expect(surfaceFor("metal")).toEqual(expect.objectContaining({ metalness: 1 }));
     expect(surfaceFor("metal").roughness).toBeLessThan(0.5);
-    expect(surfaceFor("glass").opacity).toBeLessThan(1);
+    expect(surfaceFor("glass").transmission).toBe(1);
+    expect(surfaceFor("glass").ior).toBe(1.5);
     expect(surfaceFor("glass").roughness).toBeLessThan(0.1);
     expect(surfaceFor("ceramic").clearcoat).toBeGreaterThan(0.5);
     expect(surfaceFor("wood").clearcoat).toBeGreaterThan(0);
     expect(surfaceFor("leather").sheen).toBeGreaterThan(0);
-    expect(surfaceFor("metal").reflection).toBeGreaterThan(1);
     expect(surfaceFor("cloth")).toEqual(expect.objectContaining({ roughness: 0.95, sheen: 1 }));
     expect(surfaceFor("stone").roughness).toBeGreaterThan(0.8);
     expect(surfaceFor("liquid").roughness).toBeLessThan(0.1);
-    expect(surfaceFor("energy field").glow).toBeGreaterThan(0);
+    // Nothing glows of itself.
+    for (const surface of Object.values(SURFACES)) expect(surface).not.toHaveProperty("glow");
     expect(surfaceFor(undefined)).toBe(PLAIN_SURFACE);
     expect(surfaceFor("toString")).toBe(PLAIN_SURFACE);
     // Every family has a colour to fall back to, and every listed species a known family.
@@ -272,7 +345,7 @@ describe("buildRoomScene", () => {
     for (const { family } of Object.values(SPECIES)) expect(Object.keys(SURFACES)).toContain(family);
   });
 
-  it("grounds things in shadow: things and people cast and take shadows, the floor and walls take them, the ceiling casts none", () => {
+  it("grounds things in shadow: things and people cast and take shadows, the floor, walls and ceiling take them and cast none", () => {
     const scene = build(livingRoomLayout());
     const thingMeshes = [...scene.things.values()].flatMap((group) => meshes(group));
     expect(thingMeshes.length).toBeGreaterThan(5);
@@ -284,18 +357,18 @@ describe("buildRoomScene", () => {
     expect(floor.castShadow).toBe(false);
     expect(Object.values(scene.walls).flatMap((wall) => meshes(wall)).every((mesh) => mesh.receiveShadow && !mesh.castShadow)).toBe(true);
     expect(scene.ceiling.castShadow).toBe(false);
-    const lights = scene.root.children.filter((child): child is THREE.DirectionalLight => child instanceof THREE.DirectionalLight);
-    expect(lights).toHaveLength(1);
-    expect(lights[0].castShadow).toBe(true);
+    expect(scene.ceiling.receiveShadow).toBe(true);
     disposeRoomScene(scene);
   });
 
-  it("fits the key light's shadow camera round the whole room, floor to ceiling", () => {
-    for (const size of [[4, 3, 2.4], [20, 12, 6], [1, 30, 3]] as Array<[number, number, number]>) {
-      const sun = keyLight(size);
+  it("fits a directional light's shadow camera round the whole room, floor to ceiling", () => {
+    const dirs: Array<[number, number, number]> = [[0.4, -0.6, 0.69], [0, 0, 1], [-0.9, 0.1, 0.42]];
+    for (const size of [[4, 3, 2.4], [20, 12, 6], [1, 30, 3]] as Array<[number, number, number]>) for (const raw of dirs) {
+      const n = Math.hypot(...raw);
+      const sun = directionalLight(size, [raw[0] / n, raw[1] / n, raw[2] / n], 1000, 5500);
       const camera = sun.shadow.camera;
       camera.position.copy(sun.position);
-      camera.lookAt(new THREE.Vector3());
+      camera.lookAt(sun.target.position);
       camera.updateMatrixWorld(true);
       const [w, d, h] = size;
       for (const x of [-w / 2, w / 2]) for (const y of [-d / 2, d / 2]) for (const z of [0, h]) {
@@ -304,7 +377,6 @@ describe("buildRoomScene", () => {
         expect(Math.abs(p.y)).toBeLessThan(1);
         expect(Math.abs(p.z)).toBeLessThan(1);
       }
-      // A texel and a half of normal bias: small against the room.
       expect(sun.shadow.normalBias).toBeGreaterThan(0);
       expect(sun.shadow.normalBias).toBeLessThan(0.05);
       sun.dispose();

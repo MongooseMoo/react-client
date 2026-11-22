@@ -52,11 +52,90 @@ by it, and by the exit's own name when it is absent.
 | `things[].front` | Present only with native `fronted`: local `axis`, floor heading `yaw`, and native compass `direction`. Gaze is separate. |
 | `things[].relation` | Viewer-identifiable support: native `kind`, target ID and readable `text`. |
 | `things[].state` | Applicable public `opened`, `lit`, and electronics `mode`; unknown fields are omitted. Projection never settles electronics. |
-| `finishes` | Native floor, wall and ceiling surface names. Missing visual colours remain unspecified. |
+| `finishes` | `{"floor": {...}, "wall": {...}, "ceiling": {...}}`, each `{"name": "oak", "colour": "#a0703f", "response": "satin"}`: the native surface name always; `colour` (sRGB `#rrggbb`) and `response` (`matte`, `satin`, `gloss`, `metal` or `glass`) only where the material owner knows them. A finish that is not an object with a non-empty `name` is treated as not sent; a malformed `colour` or an unknown `response` is left out and the name kept. |
+| `light` | Optional. The room's light (below, "Light"): `{"lux": …, "sky": {…}}`. |
+| `things[].light` | Optional. The light a thing gives (below, "Light"). |
 | `things[].classes` | Optional. The registered `$` names of the thing's ancestors, nearest first, without the `$` (`["table", "furniture", "thing"]`). The client draws a thing by the first name it knows. |
 | `things[].capabilities` | Optional. The capability names the thing declares (`furniture_seating`, `support_surface`). |
 | `things[].material` | Optional. What it is made of: `[{"species": "wood", "fraction": 0.9}, …]`. The client colours a thing by its largest fraction. |
 | `things[].appearance` | Optional, `player` and `person` only; absent when the character has no appearance record. How the person looks to this recipient (below). The person's height is their box's height in `shapes`, not repeated here. |
+
+### Light
+
+All light is in physical units. Lengths are metres in the room's frame; directions are unit vectors in it.
+
+```json
+"light": {"lux": 42000.0,
+          "sky": {"sun": {"dir": [0.42, -0.55, 0.72], "lux": 88000.0, "cct": 5400},
+                  "moon": {"dir": [-0.3, 0.2, 0.93], "lux": 0.01, "cct": 4100},
+                  "diffuse_lux": 14000.0, "cct": 7000}}
+```
+
+| Field | Meaning |
+|---|---|
+| `light.lux` | Illuminance at the room's centre, floor height, lux. |
+| `light.sky` | Present only when daylight reaches the room. |
+| `light.sky.sun` | `dir` toward the sun, `lux` its direct normal illuminance, `cct` its colour temperature in kelvin. |
+| `light.sky.moon` | The same for the Moon, or absent. |
+| `light.sky.diffuse_lux`, `light.sky.cct` | The sky's own illuminance on a level surface (no sun or Moon disc), and its colour temperature. |
+
+```json
+"light": {"lumens": 800.0, "cct": 2700, "shape": "spot", "radius": 0.04, "cone_deg": 60.0, "dir": [0.0, 0.0, -1.0], "on": true}
+```
+
+| Field | Meaning |
+|---|---|
+| `things[].light.lumens` | Luminous flux, lumens. |
+| `things[].light.cct` | Colour temperature, kelvin. |
+| `things[].light.shape` | `point`, `spot` (a cone along `dir`) or `area` (a disk of `radius`). |
+| `things[].light.radius` | The emitter's radius, metres. |
+| `things[].light.cone_deg`, `things[].light.dir` | A spotlight's full cone angle in degrees and its direction. Required for `spot`. |
+| `things[].light.on` | Whether it is giving light now. `state.lit` is unchanged beside it. |
+
+A malformed `light` is treated as not sent; a malformed `sky` is dropped and `lux` kept.
+
+**When the server sends no `light`** (as before these fields existed) the 3D views draw the room with
+a neutral fill from no direction, 100 lux on an upward face and 30 lux on a downward one, casting no
+shadow, and nothing else: no sun, sky or lamp is invented, and the Room tab
+says nothing about light. Things that send a `light` are still drawn as lights.
+
+How the 3D views draw it (three.js r187, whose lights take these units: directional lights lux, point
+and spot lights candela, a pixel luminance in cd/m^2):
+
+- A thing's light sits at its body's centre (`pose.centre_m`, else the middle of its shapes): a point
+  light, or an area light (the wire gives its disk no facing, so it lights all round), of I = lumens / 4 pi candela, or a spotlight of I = lumens / (2 pi (1 - cos(cone / 2)))
+  candela along `dir` (Lagarde and de Rousiers 2014, "Moving Frostbite to Physically Based Rendering",
+  eqs. 15-16), falling off by inverse square, in the blackbody colour of its `cct` (Planck's law against
+  the CIE 1931 observer). A cone wider than 180 degrees is drawn as a point light of the spot's
+  intensity. A light that is `on` makes its thing glow at the luminance of a ball (point) or disk
+  (area, spot) of its radius, lumens / (area x pi) (1 cm when no radius is sent), and that thing casts no
+  shadow, since its light is inside it. Nothing else glows of itself: doorways, crystal bodies and
+  energy fields do not; a running screen without its own `light` glows at the room's metered luminance,
+  enough to read as on.
+- With `sky`: the sun and Moon as directional lights of their `lux` toward `dir`; the sky as light from
+  above of `diffuse_lux` in the colour of its `cct` (light off the floor comes from the bounce below); a sky dome behind the room, its brightness pattern from Hosek and Wilkie 2012 (the
+  RGB coefficients of their reference code 1.4a, turbidity 3, ground albedo 0.1 as in the paper's figures),
+  scaled so the dome gives a level surface exactly `diffuse_lux` in the `cct` colour, with the sun and
+  Moon as discs of their `lux` over 6.8e-5 sr. The model holds for the sun at or above the horizon; a
+  sun below it is drawn at elevation 0, as dark as `diffuse_lux` says. The wire gives no windows, so
+  walls and ceiling do not shut the sun and sky out of a room the server says they reach.
+- Up to four lights cast shadows: those giving most light at the room's centre.
+- Light bouncing off the room: the room seen from its middle, lit as above, is captured twice into the
+  surroundings every surface is lit by and reflects, so a lamp lights the ceiling above its shade and
+  metal shows the room it is in.
+- Exposure from `lux` like a camera's: EV100 = log2(L x 100 / 12.5) for the luminance L = lux x 0.18 / pi
+  of a middle-grey surface, exposure 1 / (1.2 x 2^EV100) (Frostbite p.27, p.85-86), then AgX tone
+  mapping and sRGB output. The view adapts no lower than 0.01 cd/m^2 (where colour vision ends,
+  Jensen et al. 2000), so a darker room shows darker and a room with no light is black.
+- Below 4 cd/m^2 the picture is seen as a dark-adapted eye sees it (Jensen et al. 2000, "Night
+  Rendering"): colour fades and shifts blue as the rods take over, and fine texture blurs while edges
+  stay sharp.
+
+The Room tab says the room's light in words under its size, from `light` alone: "Light: dim (about 5
+lux), mostly from brass lamp." The level is dark, dim, well lit or bright by the luminance of a
+middle-grey surface (below 0.01, 4 and 1000 cd/m^2); the source is what gives the most light at the
+room's centre: daylight, twilight (sky light with the sun sent below the horizon), skylight (sky light
+with no sun sent), moonlight, or the thing by name.
 
 ### `things[].appearance`
 
@@ -427,9 +506,9 @@ species' family (`$material_engine.profiles[species]["family"]`; the family's ow
 names a family). The families the game has are `metal`, `glass`, `wood`, `leather`, `cloth`, `stone`,
 `ceramic`, `plastic`, `flesh`, `plant`, `earth`, `liquid` and `energy field`; the client also knows
 `ice`, `fungal_ingredient` and `grain_meal`. Dollhouse and Your eyes give each family its own surface:
-metal mirrors the room, glass is clear and glossy (see-through, both faces drawn), ceramic is glazed,
+metal mirrors the room, glass is clear and lets light through (refracting, both faces drawn), ceramic is glazed,
 wood is varnished, leather has a soft sheen, cloth is fully matte with a fabric sheen, stone and earth
-are rough, plastic is smooth, liquid and ice are glossy and partly clear, and an energy field glows. A
+are rough, plastic is smooth, liquid and ice let light through, and an energy field is half see-through. A
 part's colour is its `colour` when sent, else its species' colour where the client knows the species,
 else its family's colour, else the host's. A part without `material` takes the host's largest
 material's family where the client knows it. A `material` that is not an object with a non-empty
@@ -488,7 +567,8 @@ is taken the same way. The thing stands on the floor in the middle of an empty r
 The script writes `front.png`, `three-quarter.png`, `side.png`, `back.png` and `top.png` (960 by 720) into
 `<outdir>`: front from the south, side from the east, back from the north, top straight down with north up, each
 framing everything drawn, with the room's walls and ceiling left out and its floor, lights, materials and shadows
-kept. It prints a line per thing: `#1 sword: 4 parts, drawn`, or, when the client would not draw its parts (one part
+kept. It is lit as "Light" above says: by the input's `light` and its things' `light`, else by the neutral fill,
+which casts no shadow (give the input a `light`, and a thing with a `light`, to see one lit and shadowed). It prints a line per thing: `#1 sword: 4 parts, drawn`, or, when the client would not draw its parts (one part
 it cannot draw drops the whole list; see above), the decoder's reason, naming the first part it rejects by number and
 role:
 
@@ -609,10 +689,10 @@ picture, a TV as a dark screen, a door leaf as a door, a book or note as a flat 
 else as its boxes and spheres. In 3D they are coloured by their largest material (wood and pine brown, lcd
 near-black, paper cream, foam and cotton fabric blue, plastic grey, metal and steel steel-grey, and the
 other common species in `SPECIES` in `src/map/roomScene.ts`; anything else a neutral stone), with that
-species' family's surface (see `material` on form parts). The room is lit by a soft sky light, a key
-light high over the south-east that casts soft shadows (things and people cast them; floor, walls,
-things and people take them; the ceiling and see-through things cast none), and a studio room that
-surfaces mirror, metal most. The shadows are redrawn only when the room or something in it changes,
+species' family's surface (see `material` on form parts). The floor, walls and ceiling are drawn in
+their finish's `colour` and `response` (matte, satin, gloss, metal, glass), else in plain fixed tones.
+The room is lit only as "Light" above says; things and people cast shadows and take them, floor,
+walls and ceiling take them. The shadows are redrawn only when the room or something in it changes,
 never while the view turns. People are figures: head, body, arms and legs sized by their height and
 build, painted with their skin, hair, eye and garment colours, with hair by length and texture,
 facial hair, a head garment, and parts for their traits; standing, sitting or lying as `posture`

@@ -146,6 +146,112 @@ export function partMaterial(part: LayoutFormPart): LayoutPartMaterial | undefin
     ? { species: m.species, family: m.family } : undefined;
 }
 
+/** A light source's shape: a point, a spotlight (a cone along `dir`), or an area (a glowing disk of `radius`). */
+export type LayoutLightShape = "point" | "spot" | "area";
+
+/** `things[].light`: what a thing emits, in physical units. */
+export interface LayoutLightSource {
+  /** Luminous flux, lumens. */
+  lumens: number;
+  /** Correlated colour temperature, kelvin. */
+  cct: number;
+  shape: LayoutLightShape;
+  /** The emitter's radius, metres. */
+  radius?: number;
+  /** A spotlight's full cone angle, degrees (above 0, at most 360). */
+  cone_deg?: number;
+  /** A spotlight's direction, a unit vector in the room's frame. */
+  dir?: LayoutVector;
+  on: boolean;
+}
+
+/** The sun or the Moon as the room has it: `dir` a unit vector toward it (room frame), `lux` its direct normal illuminance. */
+export interface LayoutSkyBody {
+  dir: LayoutVector;
+  lux: number;
+  cct: number;
+}
+
+/** Daylight reaching the room. */
+export interface LayoutSky {
+  sun?: LayoutSkyBody;
+  moon?: LayoutSkyBody;
+  /** Illuminance from the sky alone (no sun or Moon disc) on a level surface, lux. */
+  diffuse_lux: number;
+  /** The sky's colour temperature, kelvin. */
+  cct: number;
+}
+
+/** The room's top-level `light`. */
+export interface LayoutRoomLight {
+  /** Illuminance at the room's centre at floor height, lux. */
+  lux: number;
+  /** Present only when daylight reaches the room. */
+  sky?: LayoutSky;
+}
+
+const nonNegative = (value: unknown): value is number => finite(value) && value >= 0;
+const kelvin = (value: unknown): value is number => finite(value) && value > 0;
+const skyBody = (value: unknown): value is LayoutSkyBody =>
+  record(value) && unit(value.dir) && nonNegative(value.lux) && kelvin(value.cct);
+
+/** A thing's `light` when it is well formed, else undefined: the thing then gives no light. */
+export function thingLight(thing: LayoutThing): LayoutLightSource | undefined {
+  const l = thing.light;
+  if (!record(l) || !nonNegative(l.lumens) || !kelvin(l.cct) || typeof l.on !== "boolean") return undefined;
+  if (l.shape !== "point" && l.shape !== "spot" && l.shape !== "area") return undefined;
+  if (l.radius !== undefined && !nonNegative(l.radius)) return undefined;
+  if (l.shape === "spot" && !(finite(l.cone_deg) && l.cone_deg > 0 && l.cone_deg <= 360 && unit(l.dir))) return undefined;
+  return {
+    lumens: l.lumens, cct: l.cct, shape: l.shape, on: l.on,
+    ...(l.radius !== undefined ? { radius: l.radius } : {}),
+    ...(l.shape === "spot" ? { cone_deg: l.cone_deg as number, dir: l.dir as LayoutVector } : {}),
+  };
+}
+
+export type FinishSlot = "floor" | "wall" | "ceiling";
+/** How a finish takes the light. */
+export type FinishResponse = "matte" | "satin" | "gloss" | "metal" | "glass";
+const RESPONSES: readonly FinishResponse[] = ["matte", "satin", "gloss", "metal", "glass"];
+
+/** One surface's finish: its name always; its sRGB colour (`#rrggbb`) and response where the MOO knows them. */
+export interface LayoutFinish {
+  name: string;
+  colour?: string;
+  response?: FinishResponse;
+}
+
+/**
+ * A slot's finish when it is well formed (a non-empty name), else undefined. A colour that is not `#rrggbb` or a
+ * response the client does not know is left out; the name is kept.
+ */
+export function roomFinish(layout: RoomLayout, slot: FinishSlot): LayoutFinish | undefined {
+  const f = layout.finishes?.[slot];
+  if (!record(f) || typeof f.name !== "string" || f.name.trim() === "") return undefined;
+  return {
+    name: f.name,
+    ...(typeof f.colour === "string" && /^#[0-9a-fA-F]{6}$/.test(f.colour) ? { colour: f.colour } : {}),
+    ...(RESPONSES.includes(f.response as FinishResponse) ? { response: f.response as FinishResponse } : {}),
+  };
+}
+
+/** The room's `light` when it is well formed, else undefined. A malformed `sky` is dropped; the rest is kept. */
+export function roomLight(layout: RoomLayout): LayoutRoomLight | undefined {
+  const l = layout.light;
+  if (!record(l) || !nonNegative(l.lux)) return undefined;
+  const s = l.sky;
+  if (!(record(s) && nonNegative(s.diffuse_lux) && kelvin(s.cct) &&
+    (s.sun === undefined || skyBody(s.sun)) && (s.moon === undefined || skyBody(s.moon)))) return { lux: l.lux };
+  return {
+    lux: l.lux,
+    sky: {
+      diffuse_lux: s.diffuse_lux, cct: s.cct,
+      ...(s.sun !== undefined ? { sun: s.sun as LayoutSkyBody } : {}),
+      ...(s.moon !== undefined ? { moon: s.moon as LayoutSkyBody } : {}),
+    },
+  };
+}
+
 export interface LayoutBody {
   id: string;
   lifetime: string;
@@ -193,6 +299,8 @@ export interface LayoutThing {
   front?: LayoutFront;
   relation?: LayoutRelation;
   state?: { opened?: boolean; lit?: boolean; mode?: string };
+  /** The light it gives, `LayoutLightSource`. Read through `thingLight`; anything malformed there gives no light. */
+  light?: unknown;
   form_parts?: LayoutFormPart[];
   /** Acoustic snapshot origin; never a physical drawing position. */
   origin?: LayoutVector;
@@ -309,7 +417,10 @@ export interface LayoutMaterial {
 export interface RoomLayout {
   num: number;
   room_lifetime?: string;
-  finishes?: Partial<Record<"floor" | "wall" | "ceiling", string>>;
+  /** Each surface's finish, `LayoutFinish`. Read through `roomFinish`; a malformed one is treated as not sent. */
+  finishes?: Partial<Record<FinishSlot, unknown>>;
+  /** The light in the room, `LayoutRoomLight`. Read through `roomLight`; absent or malformed, the room has none on the wire. */
+  light?: unknown;
   /** `room:dimensions()`: width (east-west), depth (north-south), height. The room spans ±width/2, ±depth/2. */
   size: LayoutVector;
   exits: LayoutExit[];

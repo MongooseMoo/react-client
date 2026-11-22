@@ -7,7 +7,7 @@ import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
 import trestle from "../map/roomLayout.trestle.sample.json";
 import { useRoomStore } from "../stores/roomStore";
 import { GMCPClientSpatial } from "./Client/Spatial";
-import { FRAME_NAMES, GMCPRoom, type GMCPMessageRoomInfo, partMaterial, wornProblems } from "./Room";
+import { FRAME_NAMES, GMCPRoom, type GMCPMessageRoomInfo, partMaterial, roomFinish, wornProblems } from "./Room";
 
 const info = (num: number) => ({ num, name: `Room ${num}`, area: "Area" }) as GMCPMessageRoomInfo;
 
@@ -171,7 +171,8 @@ describe("Room.Layout", () => {
     room.receive("Layout", nativeFront);
     const actual = useRoomStore.getState().roomLayout;
     const chair = actual?.things[0];
-    expect(actual?.finishes).toEqual({ floor: "oak", wall: "drywall", ceiling: "drywall" });
+    expect(actual && roomFinish(actual, "floor")).toEqual({ name: "oak" });
+    expect(actual && roomFinish(actual, "wall")).toEqual({ name: "drywall" });
     expect(chair?.front?.direction).toBe("north");
     expect(chair?.pose?.dimensions_m).toEqual([0.6, 0.6, 0.65]);
     if (!chair?.pose || !actual) throw new Error("missing native physical record");

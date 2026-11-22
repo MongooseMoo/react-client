@@ -1,7 +1,8 @@
 import type React from "react";
 import { lazy, Suspense, useContext, useMemo, useState } from "react";
 import { downloadFile } from "../downloadFile";
-import type { RoomLayout } from "../gmcp/Room";
+import { type RoomLayout, roomFinish, roomLight } from "../gmcp/Room";
+import { lightWords, placedLights } from "../map/lightUnits";
 import { layoutSummary, metres, placeThings } from "../map/roomLayout";
 import { useItemsStore } from "../stores/itemsStore";
 import { useSpatialStore } from "../stores/spatialStore";
@@ -75,6 +76,8 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
   };
 
   const placed = useMemo(() => placeThings(layout), [layout]);
+  // The room's light in words, from what the MOO sends; nothing when it sends none.
+  const light = useMemo(() => lightWords(roomLight(layout), placedLights(placed)), [layout, placed]);
   const summary = layoutSummary(name, layout);
   const [w, d, h] = layout.size;
 
@@ -133,11 +136,12 @@ const RoomLayoutView: React.FC<RoomLayoutViewProps> = ({ layout, roomName, onCom
       <p>
         {metres(w)} east to west, {metres(d)} north to south, {metres(h)} high.
       </p>
+      {light && <p className="room-layout-light">{light}</p>}
       {layout.finishes && <dl aria-label="Room finishes">
         {(["floor", "wall", "ceiling"] as const).map((slot) => {
-          const finish = layout.finishes?.[slot];
-          return typeof finish === "string" && finish ? <div key={slot}>
-            <dt>{slot === "wall" ? "Walls" : slot === "floor" ? "Floor" : "Ceiling"}</dt><dd>{finish}</dd>
+          const finish = roomFinish(layout, slot);
+          return finish ? <div key={slot}>
+            <dt>{slot === "wall" ? "Walls" : slot === "floor" ? "Floor" : "Ceiling"}</dt><dd>{finish.name}</dd>
           </div> : null;
         })}
       </dl>}

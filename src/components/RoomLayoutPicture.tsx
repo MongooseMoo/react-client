@@ -1,6 +1,6 @@
 import type React from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { isLayoutPose, type RoomLayout } from "../gmcp/Room";
+import { isLayoutPose, type RoomLayout, roomFinish } from "../gmcp/Room";
 import { stripMudAnsiTags } from "../stripMudAnsiTags";
 import { tokenColours } from "../avatar/figure";
 import {
@@ -518,7 +518,7 @@ const RoomLayoutPicture: React.FC<RoomLayoutPictureProps> = ({ layout, placed, y
     >
       <style>{LAYOUT_STYLE}</style>
       <rect className="rl-bg" x={base.x} y={base.y} width={base.w} height={base.h} />
-      <rect className="rl-floor" x={-w / 2} y={-d / 2} width={w} height={d}><title>{layout.finishes?.floor ? `${layout.finishes.floor} floor` : "Floor"}</title></rect>
+      <rect className="rl-floor" x={-w / 2} y={-d / 2} width={w} height={d}><title>{roomFinish(layout, "floor") ? `${roomFinish(layout, "floor")?.name} floor` : "Floor"}</title></rect>
       <g>{grid}</g>
       <g>
         {ordered.map((p) => {
