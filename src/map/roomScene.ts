@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { colourHex, hexToNumber } from "../avatar/colour";
-import { type Footprint, figureParams } from "../avatar/figure";
+import { type FigureParams, type Footprint, figureParams, UNCOLOURED_GARMENT, wornParts } from "../avatar/figure";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { isLayoutPose, type LayoutFormPart, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
-import { FigureCache, figureMesh, headOutline } from "./figureMesh";
+import { isLayoutPose, type LayoutFormPart, type LayoutFramePart, type LayoutHeld, type LayoutPose, type LayoutThing, type LayoutVector, partMaterial, type RoomLayout } from "../gmcp/Room";
+import { figureFrames, frameMatrix } from "./bodyFrames";
+import { FigureCache, figureMesh, headOutline, standParts } from "./figureMesh";
 import { CREASE_DEGREES, extrudeGeometry, loftGeometry, roundedBoxGeometry, sweepGeometry } from "./partShapes";
 
 export { FigureCache };
@@ -375,13 +376,13 @@ export function thingFamily(thing: LayoutThing): string | undefined {
 
 /**
  * A form part's colour and family. Colour: its sent `colour`, else its material's species colour, else its
- * material's family colour, else `fallback` (the thing's, as before materials were sent). Family: its material's,
- * else the thing's main species' family.
+ * material's family colour, else `fallback` (the thing's, as before materials were sent; a garment's for a worn part).
+ * Family: its material's, else `fallbackFamily` (the thing's main species' family).
  */
-export function partLook(part: LayoutFormPart, thing: LayoutThing, fallback: number): { colour: number; family: string | undefined } {
+export function partLook(part: LayoutFormPart, fallbackFamily: string | undefined, fallback: number): { colour: number; family: string | undefined } {
   const material = partMaterial(part);
   const hex = colourHex(part.colour);
-  const family = material?.family ?? thingFamily(thing);
+  const family = material?.family ?? fallbackFamily;
   const colour = hex ? hexToNumber(hex)
     : material ? speciesOf(material.species)?.colour ?? (Object.hasOwn(FAMILY_COLOURS, material.family) ? FAMILY_COLOURS[material.family] : fallback)
     : fallback;
@@ -569,12 +570,99 @@ class Builder {
       const offset = new THREE.Vector3(0, 0, -pose.dimensions_m[2] / 2).applyQuaternion(q);
       mesh.position.fromArray(pose.centre_m).add(offset);
     }
-    mesh.updateMatrixWorld();
+    const worn = this.wear(mesh, params, visible);
+    mesh.updateMatrixWorld(true);
     const chin = params.top - params.headHeight * 1.05;
     const outline = headOutline(mesh.geometry, chin);
     const toWorld = (p: THREE.Vector3) => p.clone().applyMatrix4(mesh.matrixWorld);
-    return { mesh, label: outline.map(toWorld), head: boxCorners(headBox(mesh.geometry, chin)).map(toWorld), animal: params.plan.kind === "animal" };
+    const head = headBox(mesh.geometry, chin).clone();
+    // A helm or a hat drawn from parts stands above the head: the label and a zoom onto the head go over it too.
+    const above: THREE.Vector3[] = [];
+    for (const part of worn) {
+      const box = new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute).applyMatrix4(part.matrix);
+      if (box.max.z < chin) continue;
+      head.union(box);
+      above.push(...boxCorners(box).filter((p) => p.z >= chin));
+    }
+    return { mesh, label: [...outline, ...above].map(toWorld), head: boxCorners(head).map(toWorld), animal: params.plan.kind === "animal" };
   }
+
+  /**
+   * What a figure (`mesh`, built from `params`) wears and holds, from `worn` (an appearance or a stand: `garments` and
+   * `held`), as meshes added to it in its own frame: each garment's parts mapped from its body frames' units onto this
+   * figure, and each held thing rigid at its size with its grip in the hand. Returns the meshes added. Nothing is
+   * added for a body plan without the human skeleton. The figure's geometry stays the cached one.
+   */
+  wear(figure: THREE.Object3D, params: FigureParams, worn: unknown): THREE.Mesh[] {
+    const frames = figureFrames(params);
+    if (!frames) return [];
+    const added: THREE.Mesh[] = [];
+    wornParts(worn).forEach((garment, rank) => {
+      // Each garment further out than the one under it, so the outer layer is the one seen where two meet.
+      const grown = 1 + LAYER_GAP * rank;
+      for (const part of garment.parts as LayoutFramePart[]) {
+        const frame = frames[part.frame];
+        const at = frameMatrix({ ...frame, size: frame.size.clone().multiply(new THREE.Vector3(grown, grown, 1)) });
+        added.push(this.wornPart(figure, part, at, garment.colour, `worn ${garment.name}`));
+      }
+    });
+    for (const held of heldThings(worn)) {
+      // The main hand is the right.
+      const hand = frames[held.hand === "main" ? "right_hand" : "left_hand"];
+      const grip = hand.origin.clone().addScaledVector(hand.z, hand.size.z / 2);
+      // Its grip along the hand's length, the working end down from the wrist (the arm hangs).
+      const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(...held.grip.axis), hand.z.clone().negate());
+      const at = new THREE.Matrix4().compose(grip, turn, new THREE.Vector3(1, 1, 1))
+        .multiply(new THREE.Matrix4().makeTranslation(-held.grip.center[0], -held.grip.center[1], -held.grip.center[2]));
+      for (const part of held.form_parts) added.push(this.wornPart(figure, part, at, UNCOLOURED_GARMENT, `held ${held.name}`));
+    }
+    return added;
+  }
+
+  /** One worn or held part on a figure: its unit box placed as `placePart` places a thing's, then by `at`. */
+  private wornPart(figure: THREE.Object3D, part: LayoutFormPart, at: THREE.Matrix4, colour: string, name: string): THREE.Mesh {
+    const look = partLook(part, undefined, hexToNumber(colour));
+    const mesh = new THREE.Mesh(partGeometry(part), this.material(look.colour, { family: look.family }));
+    mesh.userData.part = name;
+    mesh.matrixAutoUpdate = false;
+    placePart(mesh, part);
+    mesh.matrix.premultiply(at);
+    figure.add(mesh);
+    return mesh;
+  }
+
+  /**
+   * A stand standing on its group's origin, turned as a person without a facing is: a plain
+   * figure of the neutral body (1.75 m, average build, standing) on a post, wearing and holding `stand`'s things by
+   * the same path as a person.
+   */
+  stand(stand: unknown): THREE.Group {
+    const params = figureParams({ build: "average" }, { height: STAND_HEIGHT });
+    const group = new THREE.Group();
+    group.rotation.z = Math.PI;
+    group.userData.part = "stand";
+    const material = this.material(STAND_COLOUR);
+    for (const part of standParts(params)) {
+      const mesh = new THREE.Mesh(part.geometry, material);
+      mesh.userData.part = "stand";
+      group.add(mesh);
+    }
+    this.wear(group, params, stand);
+    return group;
+  }
+}
+
+/** How much wider and deeper each garment drawn from parts is than the one under it: 3%. */
+export const LAYER_GAP = 0.03;
+/** A stand's figure: the neutral body's height, metres. */
+export const STAND_HEIGHT = 1.75;
+/** A stand's own colour: plain pale wood. */
+export const STAND_COLOUR = 0xb59a72;
+
+/** The held things a decoded appearance or stand carries (`appearance.held`, checked by the Room.Layout decoder). */
+function heldThings(worn: unknown): LayoutHeld[] {
+  const held = typeof worn === "object" && worn !== null ? (worn as { held?: unknown }).held : undefined;
+  return Array.isArray(held) ? (held as LayoutHeld[]) : [];
 }
 
 function bodyQuaternion(pose: LayoutPose): THREE.Quaternion {
@@ -806,6 +894,23 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
     } else {
       group.userData.form = thingForm(p.thing);
       const pose = p.thing.pose;
+      if (p.thing.stand) {
+        // A stand is drawn as its figure wearing what is on it, in place of its own form.
+        group.userData.form = "stand";
+        const figure = builder.stand(p.thing.stand);
+        group.add(figure);
+        if (isLayoutPose(pose)) {
+          figure.position.z = -pose.dimensions_m[2] / 2;
+          group.quaternion.copy(bodyQuaternion(pose));
+          group.position.fromArray(pose.centre_m);
+        } else figure.position.set(x, y, p.bounds.z0);
+        group.updateMatrixWorld(true);
+        const drawn = new THREE.Box3().setFromObject(group);
+        labelPoints.set(p.thing.id, [new THREE.Vector3(x, y, Math.max(p.bounds.z1, drawn.max.z))]);
+        root.add(group);
+        things.set(p.thing.id, group);
+        continue;
+      }
       if (isLayoutPose(pose) && (pose.box || p.thing.form_parts?.length)) {
         const [w, d, h] = pose.dimensions_m;
         const local: PlacedThing = { ...p, bounds: { x0: -w / 2, x1: w / 2, y0: -d / 2, y1: d / 2, z0: -h / 2, z1: h / 2 } };
@@ -813,7 +918,7 @@ export function buildRoomScene({ layout, placed, youId, figures, environment }: 
           const surface = thingColour(p.thing);
           for (const part of p.thing.form_parts) {
             const { role, fitting } = part;
-            const look = partLook(part, p.thing, surface);
+            const look = partLook(part, thingFamily(p.thing), surface);
             // A drawer's face without a colour of its own is a shade darker than what it is made of, so it shows.
             const colour = fitting && !colourHex(part.colour) ? new THREE.Color(look.colour).multiplyScalar(0.78).getHex() : look.colour;
             const geometry = partGeometry(part);
@@ -976,7 +1081,7 @@ export function updateRoomBodies(room: RoomScene, before: PlacedThing[], after: 
       !isLayoutPose(a) || !isLayoutPose(b) || (!b.box && !isPerson(next.thing)) ||
       a.box !== b.box || a.figure_height_m !== b.figure_height_m || a.posture !== b.posture ||
       a.dimensions_m.some((n, axis) => n !== b.dimensions_m[axis]) ||
-      old.thing.appearance !== next.thing.appearance || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
+      old.thing.appearance !== next.thing.appearance || old.thing.stand !== next.thing.stand || old.thing.state !== next.thing.state || old.thing.form_parts !== next.thing.form_parts ||
       old.thing.material !== next.thing.material || old.thing.classes !== next.thing.classes ||
       JSON.stringify(old.thing.front?.axis) !== JSON.stringify(next.thing.front?.axis)) return false;
     const matrix = (pose: LayoutPose) => new THREE.Matrix4().compose(

@@ -2,7 +2,8 @@ import * as THREE from "three";
 import type { AnimalPlan, HumanoidPlan } from "../avatar/bodyPlan";
 import { INK_DARK, overlayHex } from "../avatar/colour";
 import { type FigureParams, HORN_TONE } from "../avatar/figure";
-import { ball, block, cone, limb, type Part, placed, trunk, wing } from "./figureMesh";
+import { type BodyFrames, builtFrames, frameEnd } from "./bodyFrames";
+import { ball, block, cone, jointedLimb, limb, type Part, placed, trunk, wing } from "./figureMesh";
 
 /**
  * 3D figures for body plans other than the human one (src/avatar/bodyPlan.ts): humanoid plans on a skeleton like
@@ -160,70 +161,63 @@ function headParts(p: FigureParams, plan: HumanoidPlan, r: number, neckR: number
   return out;
 }
 
-/** A digitigrade knee: forward by this share of the height, up by this share of the hip's height. */
-export const KNEE = new THREE.Vector3(0, 0.04, 0.62);
-/** A digitigrade heel (hock): back by this share of the height and up by this share. */
-export const HOCK = new THREE.Vector3(0, -0.05, 0.14);
-
-/** A humanoid plan: the human skeleton with this plan's stance, proportions, head and colours. */
+/** A humanoid plan: the human skeleton (its body frames) with this plan's stance, proportions, head and colours. */
 function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
   const c = p.colours;
   const H = p.height;
   const s = H / 1.75;
   const crystal = plan.covering === "crystal";
   const sitting = p.posture === "sitting";
-  const legTop = H * p.legShare;
-  const seat = 0.26 * H;
-  const drop = sitting ? legTop - seat : 0;
-  const hipZ = legTop - drop;
-  const headR = p.headHeight / 2;
+  // Where every segment is, with the plan's hunch, stance and reach (bodyFrames.ts).
+  const f = builtFrames(p) as BodyFrames;
+  const hipZ = frameEnd(f.left_thigh).z;
+  const headR = f.head.size.z / 2;
   const legR = p.limbRadius * 1.15;
-  const hipX = p.hipHalf * 0.55;
-  const ankleZ = 0.06 * s;
+  const ankleZ = f.left_foot.size.z;
   const out: Part[] = [];
 
   // Legs and feet.
-  for (const side of [-1, 1]) {
-    const x = side * hipX;
-    if (sitting) {
-      const knee = v(x, 0.24 * H, seat);
-      out.push(limb(v(x, 0, hipZ), knee, legR, c.legs, !crystal));
-      out.push(limb(knee, v(x, 0.24 * H, ankleZ + legR), legR * 0.9, c.legs, !crystal));
-      out.push(block(v(x, 0.24 * H + 0.04 * s, ankleZ / 2), v(legR * 2.2, 0.16 * s, ankleZ), c.feet));
-    } else if (plan.digitigrade) {
+  for (const name of ["left", "right"] as const) {
+    const thigh = f[`${name}_thigh`];
+    const shin = f[`${name}_shin`];
+    const foot = f[`${name}_foot`];
+    const x = foot.origin.x;
+    if (sitting || !plan.digitigrade) {
+      // Standing, the knee is the middle of what was one limb from the ankle to just under the hip.
+      if (sitting) {
+        out.push(named(limb(frameEnd(thigh), thigh.origin, legR, c.legs, !crystal), "thigh"));
+        out.push(named(limb(thigh.origin, shin.origin, shin.size.x / 2, c.legs, !crystal), "shin"));
+      } else {
+        out.push(...jointedLimb(frameEnd(thigh).addScaledVector(thigh.z, -legR * 0.5), thigh.origin, shin.origin, legR, c.legs, ["thigh", "shin"], !crystal));
+      }
+      out.push(block(v(x, foot.origin.y, ankleZ / 2), foot.size.clone(), c.feet));
+    } else {
       // Standing on the toes, as a dog's hind leg stands: a short thigh a little forward to a high knee, a long shin
       // back to a raised heel well off the floor, and the foot near upright down to a paw. Every bend is shallow, so
       // the leg reads as standing; deep bends with the knee low read as a squat.
-      const knee = KNEE.clone().multiply(v(1, H, hipZ)).setX(x);
-      const hock = HOCK.clone().multiplyScalar(H).setX(x);
-      out.push(named(limb(v(x, 0, hipZ), knee, legR * 1.15, c.legs, !crystal), "thigh"));
-      out.push(named(limb(knee, hock, legR * 0.85, c.legs, !crystal), "shin"));
-      out.push(named(limb(hock, v(x, 0.03 * H, ankleZ), legR * 0.65, c.feet, !crystal), "heel"));
-      out.push(named(ball(v(x, 0.06 * H, ankleZ * 0.6), legR * 1.05, c.feet, v(1, 1.7, 0.6), 8), "paw"));
-    } else {
-      out.push(limb(v(x, 0, ankleZ + legR), v(x, 0, hipZ - legR * 0.5), legR, c.legs, !crystal));
-      out.push(block(v(x, 0.04 * s, ankleZ / 2), v(legR * 2.2, 0.16 * s, ankleZ), c.feet));
+      out.push(named(limb(frameEnd(thigh), thigh.origin, thigh.size.x / 2, c.legs, !crystal), "thigh"));
+      out.push(named(limb(thigh.origin, shin.origin, shin.size.x / 2, c.legs, !crystal), "shin"));
+      out.push(named(limb(shin.origin, v(x, 0.03 * H, ankleZ), legR * 0.65, c.feet, !crystal), "heel"));
+      out.push(named(ball(foot.origin.clone().setZ(ankleZ * 0.6), legR * 1.05, c.feet, v(1, 1.7, 0.6), 8), "paw"));
     }
   }
 
-  // The upper body, built upright from the hips and then leaned forward by the hunch. Its length is chosen so the
-  // crown, leaned, still comes to the box's top.
-  const lean = new THREE.Matrix4().makeRotationX(-plan.hunch);
-  const toBody = new THREE.Matrix4().makeTranslation(0, 0, hipZ).multiply(lean);
-  const upright = (H - drop - hipZ) / Math.cos(plan.hunch);
-  const neckLen = 0.045 * H;
-  const neckBase = upright - p.headHeight - neckLen;
-  const waistZ = 0.05 * H;
+  // The upper body, built upright from the hips and then leaned forward by the hunch, onto the waist frame's axis.
+  // Heights below are along that axis from the hips.
+  const toBody = new THREE.Matrix4().makeBasis(f.waist.x.clone().negate(), f.waist.y.clone().negate(), f.waist.z).setPosition(0, 0, hipZ);
+  const hipsBottom = f.waist.origin.clone().sub(v(0, 0, hipZ)).dot(f.waist.z);
+  const waistZ = hipsBottom + f.waist.size.z;
+  const neckBase = waistZ + f.torso.size.z;
   const shoulderZ = neckBase - p.limbRadius * 1.2;
-  const neckR = 0.045 * s * plan.shape.limbs * (plan.neckScale ?? 1);
+  const neckR = f.neck.size.x / 2;
   // Crystal is cut: six-sided hips, torso and neck, so the facets are broad and sharp.
   const sides = crystal ? 6 : undefined;
   const body: Part[] = [
-    trunk(-0.07 * H, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips, 0, sides),
+    trunk(hipsBottom, waistZ, p.hipHalf, p.waistHalf, 0.62, c.hips, 0, sides),
     trunk(waistZ, neckBase, p.waistHalf, p.shoulderHalf * 0.92, 0.55, c.torso, 0, sides),
     limb(v(-p.shoulderHalf * 0.9, 0, shoulderZ), v(p.shoulderHalf * 0.9, 0, shoulderZ), p.limbRadius * 1.35, c.torso, !crystal),
     // Up into the head, as the human figure's neck goes to 0.6 head radii below the head's middle.
-    trunk(neckBase - 0.01, upright - headR * 1.6, neckR, neckR, 1, c.neck, 0, sides),
+    trunk(neckBase - 0.01, neckBase - 0.01 + f.neck.size.z, neckR, neckR, 1, c.neck, 0, sides),
   ];
   if (plan.chest && c.torso === c.skin) {
     // A bare chest: the front of a large flat ellipsoid set inside the torso, so only a shield of it shows, from the
@@ -241,20 +235,18 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
   }
   out.push(...transform(body, toBody));
 
-  // The head, set back upright (so the face looks ahead, not at the floor), then drooped as the plan says.
-  const headCentre = v(0, 0, upright - headR).applyMatrix4(toBody);
-  const headTurn = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-plan.droop, plan.droop * 0.6, 0));
-  out.push(...transform(headParts(p, plan, headR, neckR), new THREE.Matrix4().makeTranslation(headCentre.x, headCentre.y, headCentre.z).multiply(headTurn)));
+  // The head, set back upright (so the face looks ahead, not at the floor), then drooped as the plan says: the head
+  // frame's own axes (its x the wearer's left, its y back).
+  const head = f.head;
+  const headCentre = head.origin.clone().addScaledVector(head.z, headR);
+  out.push(...transform(headParts(p, plan, headR, neckR), new THREE.Matrix4().makeBasis(head.x.clone().negate(), head.y.clone().negate(), head.z).setPosition(headCentre)));
 
-  // Arms: from the leaned shoulders down to the plan's wrist height, reaching forward by its angle.
-  const wristZ = sitting ? hipZ + 0.02 * H : Math.max(0.05 * H, plan.wristShare * H);
-  for (const side of [-1, 1]) {
-    const shoulder = v(side * p.shoulderHalf, 0, shoulderZ).applyMatrix4(toBody);
-    const fall = Math.max(0.12 * H, shoulder.z - wristZ);
-    const wrist = v(side * (p.hipHalf + p.limbRadius * 1.6), shoulder.y + Math.tan(plan.reach) * fall + (sitting ? 0.08 * s : 0), shoulder.z - fall);
-    out.push(named(limb(shoulder, wrist, p.limbRadius, c.arms, !crystal), "arm"));
-    const along = wrist.clone().sub(shoulder).normalize();
-    out.push(named(ball(wrist.clone().addScaledVector(along, p.limbRadius * 1.3), p.limbRadius * 1.25, c.hands, undefined, 8), "hand"));
+  // Arms: from the leaned shoulders down to the plan's wrist height, reaching forward by its angle, bent at the elbow.
+  for (const name of ["left", "right"] as const) {
+    const upper = f[`${name}_upper_arm`];
+    const hand = f[`${name}_hand`];
+    out.push(...jointedLimb(frameEnd(upper), upper.origin, f[`${name}_forearm`].origin, p.limbRadius, c.arms, ["upper arm", "forearm"], !crystal));
+    out.push(named(ball(hand.origin.clone().addScaledVector(hand.z, p.limbRadius * 1.25), p.limbRadius * 1.25, c.hands, undefined, 8), "hand"));
   }
 
   // Parts from the plan and from the traits sent.

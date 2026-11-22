@@ -206,17 +206,47 @@ interface Garment {
   order: number;
 }
 
+/** Whether a garment carries parts fitted to the body (`form_parts`, checked by the Room.Layout decoder). */
+const hasParts = (g: Record<string, unknown>): boolean => Array.isArray(g.form_parts) && g.form_parts.length > 0;
+
+/**
+ * The garments drawn, in the order sent: each with the known areas it colours. One with no known area is kept only
+ * when it has parts (a shield on the forearm), which are drawn though it colours nothing.
+ */
 function garments(record: Record<string, unknown>): Garment[] {
   const list = Array.isArray(record.garments) ? record.garments : [];
   const out: Garment[] = [];
   list.forEach((g, order) => {
-    if (!isRecord(g) || !Array.isArray(g.areas)) return;
-    const areas = g.areas.filter((a): a is Area => typeof a === "string" && (AREAS as readonly string[]).includes(a));
-    if (areas.length === 0) return;
+    if (!isRecord(g)) return;
+    const areas = Array.isArray(g.areas) ? g.areas.filter((a): a is Area => typeof a === "string" && (AREAS as readonly string[]).includes(a)) : [];
+    if (areas.length === 0 && !hasParts(g)) return;
     out.push({ areas, layer: finite(g.layer) ?? 0, colour: colourHex(g.colour) ?? UNCOLOURED_GARMENT, order });
   });
   return out;
 }
+
+/**
+ * The garments whose parts the 3D figure draws over the body, outermost last (lowest layer first, then in the order
+ * sent), so a later mesh is the outer one where two touch. Each with its colour, layer and parts.
+ */
+export function wornParts(value: unknown): Array<{ name: string; colour: string; layer: number; parts: unknown[] }> {
+  const record = appearanceRecord(value);
+  const list = record && Array.isArray(record.garments) ? record.garments : [];
+  return list
+    .map((g, order) => ({ g, order }))
+    .filter(({ g }) => isRecord(g) && hasParts(g))
+    .map(({ g, order }) => {
+      const r = g as Record<string, unknown>;
+      return { name: typeof r.name === "string" ? r.name : "", colour: colourHex(r.colour) ?? UNCOLOURED_GARMENT, layer: finite(r.layer) ?? 0, order, parts: r.form_parts as unknown[] };
+    })
+    .sort((a, b) => a.layer - b.layer || a.order - b.order)
+    .map(({ order: _order, ...rest }) => rest);
+}
+
+/** Whether a worn part sits on the head: a helm's dome hides the hair as a head garment does. */
+const partsCoverHead = (record: Record<string, unknown>): boolean =>
+  Array.isArray(record.garments) && record.garments.some((g) => isRecord(g) && hasParts(g) &&
+    (g.form_parts as unknown[]).some((part) => isRecord(part) && part.frame === "head"));
 
 /** The outermost garment's colour on each covered area: highest layer, then latest in the list. */
 export function outermostByArea(value: unknown): Partial<Record<Area, string>> {
@@ -344,7 +374,9 @@ export function figureParams(appearance: unknown, { height: rawHeight, base, foo
     described && Object.keys(worn).length === 0
       ? { torso: NEUTRAL_CLOTHING, arms: NEUTRAL_CLOTHING, waist: NEUTRAL_CLOTHING, legs: NEUTRAL_CLOTHING, feet: NEUTRAL_CLOTHING }
       : worn;
-  const hair = hairHex && !covered.head ? hairShape(finite(hairRecord?.length_cm)) : "none";
+  // A head garment, by its area or by parts on the head (a helm), hides the hair.
+  const headCovered = covered.head !== undefined || partsCoverHead(record);
+  const hair = hairHex && !headCovered ? hairShape(finite(hairRecord?.length_cm)) : "none";
   const textureWord = vocabKey(hairRecord?.texture) ?? "straight";
   const hairTexture: HairTexture = Object.hasOwn(HAIR_VOLUME, textureWord) ? (textureWord as HairTexture) : "straight";
   const hairVolume = 1 + (HAIR_VOLUME[hairTexture] - 1) * HAIR_BULK[hair];
@@ -427,8 +459,8 @@ export function figureParams(appearance: unknown, { height: rawHeight, base, foo
     hairVolume,
     hairTexture,
     hairStyle,
-    headCovered: covered.head !== undefined,
-    earsHidden: earsCovered({ headCovered: covered.head !== undefined, hair, hairStyle, hairTexture }),
+    headCovered,
+    earsHidden: earsCovered({ headCovered, hair, hairStyle, hairTexture }),
     facialHair,
     ...(beardLength !== undefined ? { beardLength, beardReach: beardReach(beardLength) } : {}),
     faceHidden,

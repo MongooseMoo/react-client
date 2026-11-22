@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ARMOUR, armouredPerson, armourStand, HELM, SLEEVES, SWORD } from "../map/bodyFrames.fixture";
 import { sampleLayout } from "../map/roomLayout.fixture";
 import nativeFront from "../map/roomLayout.native-front.sample.json";
 import fittedDesk from "../map/roomLayout.fitted-desk.sample.json";
@@ -227,6 +228,40 @@ describe("Room.Layout", () => {
     const kept = useRoomStore.getState().roomLayout;
     room.receive("LayoutUpdate", { num: 1234, room_lifetime: "room-1", bodies: [{ ...changed, lifetime: "replacement" }, { ...changed, id: "#new" }] });
     expect(useRoomStore.getState().roomLayout).toBe(kept);
+  });
+
+  it("keeps worn parts it can draw, drops a garment's parts it cannot (keeping the garment and the person), and drops held things and stands it cannot read", () => {
+    const person = armouredPerson("#5", 0);
+    const helm = person.appearance?.garments?.find((g) => g.name === HELM.name);
+    const badHelm = { ...HELM, form_parts: [...(HELM.form_parts ?? []), { ...HELM.form_parts?.[0], frame: "tail" }] };
+    const badSleeves = { ...SLEEVES, form_parts: [{ ...SLEEVES.form_parts?.[0], basis: [[1, 0, 0], [0, 0, 0], [0, 0, 1]] }] };
+    const appearance = {
+      ...person.appearance,
+      garments: [...(person.appearance?.garments ?? []), badHelm, badSleeves],
+      held: [SWORD, { ...SWORD, grip: { center: [0, 0, 0], axis: [2, 0, 0] } }, { ...SWORD, form_parts: [] }, { ...SWORD, hand: "tail" }],
+    };
+    room.receive("Layout", {
+      ...sampleLayout(),
+      things: [
+        { ...person, appearance },
+        armourStand("#6", 1),
+        { ...armourStand("#7", 2), stand: { held: [SWORD] } },
+        { ...armourStand("#8", 3), stand: { garments: [badSleeves], held: "sword" } },
+      ],
+    });
+    const things = useRoomStore.getState().roomLayout?.things ?? [];
+    const garments = things[0].appearance?.garments ?? [];
+    expect(garments).toHaveLength((person.appearance?.garments?.length ?? 0) + 2);
+    expect(garments.find((g) => g.name === HELM.name && g.form_parts)).toEqual(helm);
+    // The broken copies keep their name, areas, layer and colour, so they colour their areas as before.
+    expect(garments.slice(-2)).toEqual([
+      { name: HELM.name, areas: HELM.areas, layer: HELM.layer, colour: HELM.colour },
+      { name: SLEEVES.name, areas: SLEEVES.areas, layer: SLEEVES.layer, colour: SLEEVES.colour },
+    ]);
+    expect(things[0].appearance?.held).toEqual([SWORD]);
+    expect(things[1].stand?.garments).toEqual(ARMOUR);
+    expect(things[2].stand).toBeUndefined();
+    expect(things[3].stand).toEqual({ garments: [{ name: SLEEVES.name, areas: SLEEVES.areas, layer: SLEEVES.layer, colour: SLEEVES.colour }], held: undefined });
   });
 
   it("rejects other rooms and old room incarnations", () => {

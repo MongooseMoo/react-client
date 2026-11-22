@@ -207,6 +207,8 @@ export interface LayoutThing {
    * no appearance record. Nothing here is checked by the decoder, so every field may be missing or wrong.
    */
   appearance?: LayoutAppearance;
+  /** A stand: drawn as a neutral figure wearing and holding these, in place of its own form. */
+  stand?: LayoutStand;
 }
 
 /** A named palette colour: the word the MOO uses for it and its `#rrggbb` value. */
@@ -221,12 +223,47 @@ export interface LayoutMark {
   area: string;
 }
 
+/** The body frames a worn part can be authored in (docs/room-layout.md, "Body frames"). */
+export const FRAME_NAMES = [
+  "head", "neck", "torso", "waist",
+  "left_upper_arm", "right_upper_arm", "left_forearm", "right_forearm", "left_hand", "right_hand",
+  "left_thigh", "right_thigh", "left_shin", "right_shin", "left_foot", "right_foot",
+] as const;
+export type FrameName = (typeof FRAME_NAMES)[number];
+
+/** A worn part: `center`, `size` and `basis` are in units of its body `frame`, not metres. */
+export interface LayoutFramePart extends LayoutFormPart {
+  frame: FrameName;
+}
+
 /** One worn garment: the body areas it covers (head, neck, torso, arms, hands, waist, legs, feet) and its layer, higher outside. */
 export interface LayoutGarment {
   name: string;
   areas: string[];
   layer: number;
   colour?: LayoutColour;
+  /** Its construction's parts fitted to the body, each in its own frame. */
+  form_parts?: LayoutFramePart[];
+}
+
+/** A thing in a hand, drawn rigid at its real size with its grip in the hand. */
+export interface LayoutHeld {
+  hand: "main" | "off";
+  name: string;
+  id: string;
+  lifetime: string;
+  /** Its box, metres. */
+  size: LayoutVector;
+  /** Where the hand closes on it, in its own frame (metres), and the grip's long axis (a unit vector). */
+  grip: { center: LayoutVector; axis: LayoutVector };
+  /** Its parts, metres, relative to its own box's centre. */
+  form_parts: LayoutFormPart[];
+}
+
+/** What a stand (an armour stand, a rack's figure) wears and holds, drawn on a neutral figure. */
+export interface LayoutStand {
+  garments: LayoutGarment[];
+  held?: LayoutHeld[];
 }
 
 /** `things[].appearance` in Room.Layout (see docs/room-layout.md). Every key is optional. */
@@ -258,6 +295,8 @@ export interface LayoutAppearance {
   face_hidden?: boolean;
   marks?: LayoutMark[];
   garments?: LayoutGarment[];
+  /** What is in the hands. Checked on arrival: an entry the client cannot draw is dropped. */
+  held?: LayoutHeld[];
 }
 
 /** One component of a thing's material: the stored component map, which may carry more keys (`phase`, `frozen_fraction`…). */
@@ -460,24 +499,97 @@ export function formPartProblem(value: unknown): string | undefined {
 }
 
 /** Why a part list cannot be drawn: its first part the client cannot draw, by number and role, and why. */
-export function formPartsProblem(value: unknown): string | undefined {
+export function formPartsProblem(value: unknown, frames = false): string | undefined {
   if (!Array.isArray(value)) return '"form_parts" must be a list';
   for (const [i, part] of value.entries()) {
-    const problem = formPartProblem(part);
+    const problem = formPartProblem(part) ??
+      (frames && !FRAME_NAMES.includes((part as { frame?: unknown }).frame as FrameName)
+        ? `"frame" ${JSON.stringify((part as { frame?: unknown }).frame)} is not a body frame (${FRAME_NAMES.join(", ")})`
+        : undefined);
     if (problem) return `part ${i}${record(part) && typeof part.role === "string" ? ` (${part.role})` : ""}: ${problem}`;
   }
   return undefined;
 }
 
 const validFormParts = (value: unknown): value is LayoutFormPart[] => formPartsProblem(value) === undefined;
+const validFrameParts = (value: unknown): value is LayoutFramePart[] => formPartsProblem(value, true) === undefined;
 
-/** A received Room.Layout as the views draw it: a thing whose part list holds a part the client cannot draw has none. */
-export function drawableLayout(data: RoomLayout): RoomLayout {
-  return {
-    ...data,
-    things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
-      ? thing : { ...thing, form_parts: undefined }),
+/** Why a held thing cannot be drawn (docs/room-layout.md, "Body frames"); undefined when it can. */
+export function heldProblem(value: unknown): string | undefined {
+  if (!record(value)) return "a held thing must be an object";
+  if (value.hand !== "main" && value.hand !== "off") return '"hand" must be "main" or "off"';
+  if (typeof value.name !== "string") return '"name" must be text';
+  if (typeof value.id !== "string" || !/^#\d+$/.test(value.id)) return '"id" must be an object number such as "#123"';
+  if (typeof value.lifetime !== "string" || !value.lifetime) return '"lifetime" must be non-empty text';
+  if (!vector(value.size) || !value.size.every((n) => n > 0)) return '"size" must be three positive numbers';
+  if (!record(value.grip) || !vector(value.grip.center) || !unit(value.grip.axis)) return '"grip" must be {"center": three numbers, "axis": a unit vector}';
+  if (Array.isArray(value.form_parts) && value.form_parts.length === 0) return '"form_parts" must hold at least one part';
+  return formPartsProblem(value.form_parts);
+}
+
+/**
+ * Why worn and held things on a person's `appearance` or a thing's `stand` would not be drawn, one line each: a
+ * garment whose parts the client cannot draw (it is then coloured by area), a held thing it leaves out, a stand it
+ * cannot read. Empty when everything is drawn.
+ */
+export function wornProblems(thing: Pick<LayoutThing, "appearance" | "stand">): string[] {
+  const out: string[] = [];
+  const check = (worn: unknown, whose: string) => {
+    if (!record(worn)) return;
+    if (Array.isArray(worn.garments)) {
+      for (const [i, g] of worn.garments.entries()) {
+        if (!record(g) || g.form_parts === undefined) continue;
+        const problem = formPartsProblem(g.form_parts, true);
+        if (problem) out.push(`${whose} garment ${i}${typeof g.name === "string" ? ` (${g.name})` : ""}: parts not drawn, coloured by area: ${problem}`);
+      }
+    }
+    if (worn.held !== undefined && !Array.isArray(worn.held)) out.push(`${whose} "held" must be a list`);
+    for (const [i, held] of (Array.isArray(worn.held) ? worn.held : []).entries()) {
+      const problem = heldProblem(held);
+      if (problem) out.push(`${whose} held ${i}${record(held) && typeof held.name === "string" ? ` (${held.name})` : ""}: not drawn: ${problem}`);
+    }
   };
+  check(thing.appearance, "appearance");
+  if (thing.stand !== undefined) {
+    if (!record(thing.stand) || !Array.isArray(thing.stand.garments)) out.push('"stand" not drawn: it must be {"garments": [...], "held"?: [...]}');
+    else check(thing.stand, "stand");
+  }
+  return out;
+}
+
+/**
+ * Worn and held things as the client can draw them: a garment whose parts it cannot draw keeps the garment without
+ * its parts (it is then coloured by area), and a held thing it cannot draw is left out. Nothing else is checked.
+ */
+function wornAndHeld<T>(value: T): T {
+  if (!record(value)) return value;
+  const out: Record<string, unknown> = { ...value };
+  if (Array.isArray(value.garments)) {
+    out.garments = value.garments.map((g: unknown) => {
+      if (!record(g) || g.form_parts === undefined || validFrameParts(g.form_parts)) return g;
+      const { form_parts: _dropped, ...rest } = g;
+      return rest;
+    });
+  }
+  if (value.held !== undefined) out.held = Array.isArray(value.held) ? value.held.filter((held) => heldProblem(held) === undefined) : undefined;
+  return out as T;
+}
+
+/** A thing as the client draws it: parts it cannot draw dropped, a stand it cannot read dropped, the person kept. */
+function drawableThing(thing: LayoutThing): LayoutThing {
+  const out: LayoutThing = { ...thing };
+  if (thing.form_parts !== undefined && !validFormParts(thing.form_parts)) out.form_parts = undefined;
+  if (thing.appearance !== undefined) out.appearance = wornAndHeld(thing.appearance);
+  if (thing.stand !== undefined) out.stand = record(thing.stand) && Array.isArray(thing.stand.garments) ? wornAndHeld(thing.stand) : undefined;
+  return out;
+}
+
+/**
+ * A received Room.Layout as the views draw it: a thing whose part list holds a part the client cannot draw has none,
+ * and worn and held things it cannot draw are dropped as `wornProblems` says.
+ */
+export function drawableLayout(data: RoomLayout): RoomLayout {
+  return { ...data, things: data.things.map(drawableThing) };
 }
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];

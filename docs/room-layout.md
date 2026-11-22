@@ -89,10 +89,11 @@ Every key is optional; a missing key means nothing remarkable and is drawn plain
 | `features` | A list of keys for small features. The portrait draws `freckles`, `glasses`, `sunglasses`, `eyepatch`, `earrings`, `beauty_mark` and `dimples`, in black or white, whichever stands out more on the skin (as are the pupils, nose, mouth and face marks); other keys are ignored. The 3D figure draws `glasses`, `sunglasses`, `eyepatch` and `earrings` in the same colour; `freckles`, `beauty_mark` and `dimples` are too small to read at figure size and appear only in the portrait. |
 | `face_hidden` | `true` when a form hides the face; no eyes, brows, mouth, facial hair or face features are drawn. |
 | `marks` | `[{"kind": "scar", "area": "cheek"}]`, uncovered marks only. The portrait shows those on the head and neck. |
-| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside) and `colour` when it has one. Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. With no `garments` at all, the torso, arms, waist, legs and feet are drawn in a neutral dark slate (`#4b5262`), so the person looks dressed. A person with no `appearance` at all keeps the plain figure in the person colour (you in blue). |
+| `garments` | Worn things: `areas` they cover (`head`, `neck`, `torso`, `arms`, `hands`, `waist`, `legs`, `feet`), `layer` (higher is outside), `colour` when it has one, and `form_parts` when its construction is fitted to the body ("Body frames", below). Each area is drawn in its outermost garment's colour, plain cloth grey when that garment has no colour, skin when bare. With no `garments` at all, the torso, arms, waist, legs and feet are drawn in a neutral dark slate (`#4b5262`), so the person looks dressed. A person with no `appearance` at all keeps the plain figure in the person colour (you in blue). |
+| `held` | What is in the hands, each drawn rigid at its real size with its grip in the hand ("Body frames", below). |
 
-The client checks none of these on arrival; anything missing or of the wrong type is treated as
-unremarkable.
+The client checks none of these on arrival, except garments' `form_parts` and `held` ("Body frames", below);
+anything missing or of the wrong type is treated as unremarkable.
 
 ### Body plans
 
@@ -159,6 +160,75 @@ are drawn on humanoid plans when sent; `traits` add their parts to humanoid plan
 plans (animals always stand). The portrait shows `marks` on humanoid plans' heads. Accessible names and titles still
 come from `label` ("a werewolf"), shown as sent in the Room tab's People list ("Name (label)") and on the player card; the
 client adds no words of its own for a body plan, so a new label from the game shows as it arrives.
+
+### Body frames: what people wear and hold, and stands
+
+The 3D figure (Dollhouse and Your eyes) draws worn and held things from their construction's parts. The portrait
+and the plan token keep colour by area.
+
+A worn part is authored in a **body frame**, one box per segment of the figure, so it fits every wearer: tall or
+short, slender or stocky, standing, sitting or lying. A frame has a lower end (its origin), three axes and a size
+(width, depth, length). Its x is the wearer's left, its y backward (so the face, the shin's front and the toes are
+toward -y), and its z runs along the segment from its lower joint to its upper one; the foot's z is up from the sole
+with the toes toward -y, and the hand's runs from the fingertips up to the wrist. Both sides use the same axes, not
+mirrored ones. A point `(u, v, t)` in frame units is `origin + u*width*x + v*depth*y + t*length*z`: `u` and `v` run
+from -0.5 to 0.5 across the segment and `t` from 0 to 1 along it. Parts may reach past the box (a pauldron, a boot's
+sole, a pack behind the back, a shield on the outside of the forearm).
+
+| Frame | Lower end | Upper end | Width x depth |
+|---|---|---|---|
+| `head` | chin | crown | the head |
+| `neck` | base of the neck | into the head | the neck |
+| `torso` | waist | base of the neck | shoulders across; the chest's depth |
+| `waist` | bottom of the hips | waist | hips across |
+| `left_upper_arm`, `right_upper_arm` | elbow | shoulder | the arm |
+| `left_forearm`, `right_forearm` | wrist | elbow | the arm |
+| `left_hand`, `right_hand` | fingertips | wrist | the hand |
+| `left_thigh`, `right_thigh` | knee | hip | the leg |
+| `left_shin`, `right_shin` | ankle | knee | the leg |
+| `left_foot`, `right_foot` | sole | ankle | the foot |
+
+The elbow is halfway along the arm and, standing, the knee halfway along the leg; sitting, the thigh runs forward to
+the knee and the shin down to the floor. There is no separate back frame: the torso frame holds packs and capes. The
+client works out every frame from the figure's own proportions (`src/map/bodyFrames.ts`, `figureFrames`); the game
+stores no frame sizes.
+
+`garments[i].form_parts` is a list of parts as for a thing ("Inspecting a construction", below: `shape`, `center`,
+`size`, `basis`, `top`, `profile`, `wall`, `colour`, `role`, `label`), each with `frame`, one of the names above, and
+with `center`, `size` and `basis` in that frame's units, not metres:
+
+```json
+{"name": "an open-faced steel helm", "areas": ["head"], "layer": 3, "colour": {"name": "steel", "hex": "#a8b0b8"},
+ "form_parts": [{"frame": "head", "shape": "cylinder", "center": [0, 0.02, 0.62], "size": [1.2, 1.16, 0.05]},
+                {"frame": "head", "shape": "box", "center": [0, -0.6, 0.52], "size": [0.08, 0.05, 0.22]}]}
+```
+
+- A part with no `colour` takes its garment's.
+- Garments with parts are drawn lowest `layer` first (then in the order sent), each 3% wider and deeper about its
+  frames' axes than the one under it, so the outer layer is the one seen where two meet.
+- A garment with parts still colours its `areas`, so nothing shows bare through a gap. A garment with parts and no
+  known area (a shield worn on the arm) is drawn from its parts. Parts on the `head` frame hide the hair, as a head
+  garment does.
+- A list holding a part the client cannot draw (the same checks as a thing's parts, or a `frame` it does not know)
+  drops that garment's parts only: the garment then colours its areas as before, and the person is drawn.
+
+`held` is a list of things in the hands:
+
+```json
+{"hand": "main", "name": "a steel arming sword", "id": "#159080", "lifetime": "…", "size": [0.92, 0.18, 0.03],
+ "grip": {"center": [-0.33, 0, 0], "axis": [1, 0, 0]},
+ "form_parts": [{"shape": "box", "center": [0.07, 0, 0], "size": [0.66, 0.045, 0.008], "role": "blade", "label": "blade"}]}
+```
+
+`hand` is `main` (the right) or `off` (the left). `form_parts` are in metres about the thing's own box centre, as a
+thing's are. The thing is drawn rigid at that size with `grip.center` in the middle of the hand and `grip.axis` (the
+way from the grip toward the working end, a unit vector) pointing down the hand, away from the wrist: the arms hang,
+so a held thing hangs from the hand. An entry missing any key, with no parts, or with a part the client cannot draw
+is left out.
+
+A thing with `stand: {"garments": […], "held": […]}` (an armour stand, a rack's figure) is drawn as a plain figure
+of the neutral body (1.75 m, average build, standing) on a post, in pale wood, wearing and holding these by the same
+rules as a person, in place of its own shape. A click on anything worn or held selects the person or stand wearing it.
 
 ## Keeping it current
 
