@@ -2,7 +2,6 @@ import type React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { webAudioToMongooseVector } from "../audio/mongooseCoordinates";
 import type { LayoutVector, RoomLayout } from "../gmcp/Room";
@@ -57,6 +56,7 @@ import {
   zoomedFov,
   zoomedFovBy,
 } from "../map/roomScene";
+import { roomRenderer } from "../map/roomRenderer";
 import { useSpatialStore } from "../stores/spatialStore";
 
 /**
@@ -174,17 +174,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (!frame || !supported) return;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setClearColor(0x14141a);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // Neutral keeps the game's colours as sent in ordinary light and rolls off highlights instead of clipping them.
-    renderer.toneMapping = THREE.NeutralToneMapping;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
-    // Shadows depend on the room, not the camera: redrawn only when something in it is built, moves or is hidden
-    // (`shadowMap.needsUpdate` below), not on every turn of the view.
-    renderer.shadowMap.autoUpdate = false;
+    const { renderer, environment, dispose: disposeRenderer } = roomRenderer();
     renderer.domElement.setAttribute("aria-hidden", "true");
     frame.appendChild(renderer.domElement);
     const labels = new CSS2DRenderer();
@@ -201,13 +191,6 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
     // (`onWheel` below takes it), and two fingers are left to `onTouchPointer`, which zooms the same way.
     controls.touches.TWO = null;
     const scene = new THREE.Scene();
-    // A soft studio room for metal, glass and glaze to reflect, made once in code (no downloaded picture). Given to each
-    // scene's materials (`buildRoomScene`), not set as `scene.environment`, which would override each surface's strength.
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const studio = new RoomEnvironment();
-    const environment = pmrem.fromScene(studio, 0.04).texture;
-    studio.dispose();
-    pmrem.dispose();
 
     const stage: Stage = {
       renderer,
@@ -266,8 +249,7 @@ const RoomLayout3D: React.FC<RoomLayout3DProps> = ({ layout, placed, youId, labe
       if (stage.selection) disposeSelectionOutline(stage.selection);
       if (stage.room) disposeRoomScene(stage.room);
       stage.figures.dispose();
-      environment.dispose();
-      renderer.dispose();
+      disposeRenderer();
       renderer.domElement.remove();
       labels.domElement.remove();
       stageRef.current = null;

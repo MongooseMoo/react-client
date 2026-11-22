@@ -408,6 +408,15 @@ function validFormPart(value: unknown): value is LayoutFormPart {
 }
 
 const validFormParts = (value: unknown): value is LayoutFormPart[] => Array.isArray(value) && value.every(validFormPart);
+
+/** A received Room.Layout as the views draw it: a thing whose part list holds a part the client cannot draw has none. */
+export function drawableLayout(data: RoomLayout): RoomLayout {
+  return {
+    ...data,
+    things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
+      ? thing : { ...thing, form_parts: undefined }),
+  };
+}
 const pair = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && value.every(finite) && value[1] >= value[0];
 const shape = (value: unknown): value is LayoutShape => record(value) && (
@@ -466,11 +475,7 @@ export class GMCPRoom extends GMCPRoomBase {
     this.on("players", (data) => this.handlePlayers(data));
     this.on("addPlayer", (data) => this.handleAddPlayer(data));
     this.on("removePlayer", (data) => this.handleRemovePlayer(data));
-    this.on("layout", (data) => useRoomStore.getState().setRoomLayout({
-      ...data,
-      things: data.things.map((thing) => thing.form_parts === undefined || validFormParts(thing.form_parts)
-        ? thing : { ...thing, form_parts: undefined }),
-    }));
+    this.on("layout", (data) => useRoomStore.getState().setRoomLayout(drawableLayout(data)));
     this.on("layoutUpdate", (data) => {
       if (layoutUpdate(data)) useRoomStore.getState().updateRoomLayout(data);
     });

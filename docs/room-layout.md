@@ -392,6 +392,26 @@ upright round part as an ellipse the size of its widest ring, any other part as 
 convex outline round it: an arc's wedge, an extrude's outline, a sweep's tube, a loft's sections).
 It draws no table, seat or door symbol over such a thing; its parts show what it is.
 
+### Previewing forms
+
+To look at a form before any live object uses it, draw it headless with the client's own scene code:
+
+```
+uv run --no-project --python 3.12 python C:/Users/Q/code/devtools/private_desktop.py run LayoutPreview -- node scripts/preview-layout.mjs <in.json> <outdir>
+```
+
+Run it from the repository's root; `private_desktop.py` keeps it off the visible desktop, and the browser it starts
+is headless anyway. `<in.json>` is either a Room.Layout as the game sends it (with `size` and `things`), or one
+thing: `{"size": [w, d, h], "form_parts": [...], "name": "sword", "material": [{"species": "steel", "fraction": 1}]}`,
+its box in metres and its parts exactly as Room.Layout sends them (`name` and `material` optional); the thing stands
+on the floor in the middle of an empty room. The script writes `front.png`, `three-quarter.png`, `side.png`,
+`back.png` and `top.png` (960 by 720) into `<outdir>`: front from the south, side from the east, back from the
+north, top straight down with north up, each framing everything drawn, with the room's walls and ceiling left out and
+its floor, lights, materials and shadows kept. It prints each thing's part count and whether the client draws its
+parts, and exits 1 when a thing's part list would not be drawn (one part the client cannot draw drops the whole
+list; see above) or the page reports an error. The page it loads, `src/preview/layoutPreview.html`, is not part of
+the app or its build.
+
 ### Using a fitted drawer
 
 In the Room tab, select the desk under **Things**. Under its card, focus
