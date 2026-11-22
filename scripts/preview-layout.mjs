@@ -3,10 +3,11 @@
 //
 //   node scripts/preview-layout.mjs <in.json> <outdir>
 //
-// <in.json> is a Room.Layout as the game sends it, or {"size": [w, d, h], "form_parts": [...], "name"?, "material"?}
-// for one thing (its box in metres, its parts as Room.Layout sends them). Writes <outdir>/<view>.png and prints, per
-// thing, how many parts were sent and whether the client draws them; exits 1 when a thing's part list would not be
-// drawn (a part the client cannot draw drops the whole list) or the page reports an error. See docs/room-layout.md.
+// <in.json> is a Room.Layout as the game sends it, or one thing: {"size": [w, d, h], "form_parts": [...], ...}, its
+// box in metres and any other keys of a Room.Layout thing (name, material, a person's kind and appearance). Writes
+// <outdir>/<view>.png and prints, per thing, how many parts were sent and, when the client would not draw them, which
+// part the decoder rejects and why (one such part drops the thing's whole list). Exits 1 then, or on any error; 2 on
+// a wrong command line. See docs/room-layout.md, "Previewing forms".
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,13 @@ if (!input || !outdir) {
 }
 const VIEWS = ['front', 'three-quarter', 'side', 'back', 'top'];
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const layout = JSON.parse(await readFile(resolve(input), 'utf8'));
+let layout;
+try {
+  layout = JSON.parse(await readFile(resolve(input), 'utf8'));
+} catch (error) {
+  console.error(`Could not read ${resolve(input)} as JSON: ${error.message}`);
+  process.exit(1);
+}
 await mkdir(resolve(outdir), { recursive: true });
 
 // Port 0: the system picks a free one (a fixed port may be in a range Windows reserves); vite reports the real one.
@@ -36,8 +43,10 @@ try {
   await page.waitForFunction(() => window.preview !== undefined, undefined, { timeout: 60000 });
   const { things } = await page.evaluate((data) => window.preview.load(data), layout);
   for (const thing of things) {
-    console.log(`${thing.id} ${thing.name}: ${thing.parts} parts, ${thing.drawn ? 'drawn' : 'NOT DRAWN (a part the client cannot draw; see docs/room-layout.md)'}`);
-    if (!thing.drawn) problems.push(`${thing.id} ${thing.name}: part list not drawn`);
+    if (thing.problem) {
+      console.log(`${thing.id} ${thing.name}: ${thing.parts} parts, NOT DRAWN: ${thing.problem}`);
+      problems.push(`${thing.id} ${thing.name}: its parts are not drawn (${thing.problem})`);
+    } else console.log(`${thing.id} ${thing.name}: ${thing.parts ? `${thing.parts} parts, ` : ''}drawn`);
   }
   const canvas = page.locator('canvas');
   for (const view of VIEWS) {
@@ -47,7 +56,8 @@ try {
     console.log(path);
   }
 } catch (error) {
-  problems.push(String(error));
+  // The page's own message (a wrong input says what it needs), without the browser's call log.
+  problems.push(String(error.message ?? error).split('\n')[0].replace(/^page\.evaluate: (Error: )?/, ''));
 } finally {
   await browser.close();
   await server.close();

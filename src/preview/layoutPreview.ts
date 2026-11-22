@@ -1,8 +1,9 @@
 import * as THREE from "three";
-import { drawableLayout, type LayoutThing, type LayoutVector, type RoomLayout } from "../gmcp/Room";
+import { drawableLayout, formPartsProblem } from "../gmcp/Room";
 import { placeThings } from "../map/roomLayout";
 import { roomRenderer } from "../map/roomRenderer";
 import { buildRoomScene, disposeRoomScene, type RoomScene } from "../map/roomScene";
+import { PREVIEW_VIEWS, previewLayout } from "./previewInput";
 
 /**
  * The page `scripts/preview-layout.mjs` drives: draws a Room.Layout (or one thing's form parts) with the client's own
@@ -10,48 +11,9 @@ import { buildRoomScene, disposeRoomScene, type RoomScene } from "../map/roomSce
  * nothing imports it, so the production bundle never holds it. See docs/room-layout.md, "Previewing forms".
  */
 
-/** Where each view looks from, as a direction from the things' middle (x east, y north, z up). */
-export const PREVIEW_VIEWS: Readonly<Record<string, LayoutVector>> = {
-  front: [0, -1, 0.3],
-  "three-quarter": [0.8, -1, 0.7],
-  side: [1, 0, 0.3],
-  back: [0, 1, 0.3],
-  top: [0, 0, 1],
-};
-
 const WIDTH = 960;
 const HEIGHT = 720;
 const FOV = 35;
-
-const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const box = (value: unknown): value is LayoutVector => Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === "number" && n > 0);
-
-/**
- * A Room.Layout to draw: `input` itself when it is one (it has `things`), else one thing made from
- * `{"size": [w, d, h], "form_parts": [...], "name"?, "material"?}` standing on the floor in the middle of a room
- * three times its width.
- */
-export function previewLayout(input: unknown): RoomLayout {
-  if (record(input) && Array.isArray(input.things) && box(input.size)) return input as unknown as RoomLayout;
-  if (!record(input) || !box(input.size) || !Array.isArray(input.form_parts)) {
-    throw new Error('Give a Room.Layout (with "size" and "things") or one thing\'s {"size": [w, d, h], "form_parts": [...]}.');
-  }
-  const [w, d, h] = input.size;
-  const thing: LayoutThing = {
-    id: "#1",
-    name: typeof input.name === "string" ? input.name : "preview",
-    kind: "object",
-    fixed: true,
-    mounted: false,
-    lifetime: "preview",
-    shapes: [{ box: [[-w / 2, w / 2], [-d / 2, d / 2], [0, h]] }],
-    pose: { centre_m: [0, 0, h / 2], dimensions_m: [w, d, h], body_quaternion: [1, 0, 0, 0], box: true },
-    form_parts: input.form_parts as LayoutThing["form_parts"],
-    ...(Array.isArray(input.material) ? { material: input.material as LayoutThing["material"] } : {}),
-  };
-  const across = Math.max(3, 3 * Math.max(w, d));
-  return { num: 0, size: [across, across, Math.max(2.5, h * 1.5)], exits: [], things: [thing] };
-}
 
 const { renderer, environment } = roomRenderer();
 renderer.setPixelRatio(1);
@@ -64,14 +26,17 @@ let room: RoomScene | undefined;
 declare global {
   interface Window {
     preview?: {
-      load: (input: unknown) => { things: Array<{ id: string; name: string; parts: number; drawn: boolean }> };
+      load: (input: unknown) => { things: Array<{ id: string; name: string; parts: number; problem?: string }> };
       view: (name: string) => void;
     };
   }
 }
 
 window.preview = {
-  /** Draws `input` (see `previewLayout`); says, per thing, how many parts were sent and whether they are drawn. */
+  /**
+   * Draws `input` (see `previewLayout`); says, per thing, how many parts were sent and, when the client would not draw
+   * them, the decoder's reason (`formPartsProblem`: the first part it rejects, and why).
+   */
   load(input) {
     const sent = previewLayout(input);
     const layout = drawableLayout(sent);
@@ -86,11 +51,11 @@ window.preview = {
     scene.add(room.root);
     renderer.shadowMap.needsUpdate = true;
     return {
-      things: sent.things.map((thing, i) => ({
+      things: sent.things.map((thing) => ({
         id: thing.id,
         name: thing.name,
-        parts: thing.form_parts?.length ?? 0,
-        drawn: thing.form_parts === undefined || layout.things[i].form_parts !== undefined,
+        parts: Array.isArray(thing.form_parts) ? thing.form_parts.length : 0,
+        ...(thing.form_parts === undefined ? {} : { problem: formPartsProblem(thing.form_parts) }),
       })),
     };
   },
