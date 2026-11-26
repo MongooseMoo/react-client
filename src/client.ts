@@ -70,6 +70,7 @@ class MudClient {
 
   private host: string;
   private port: number;
+  private secure: boolean;
   private telnetBuffer: string = "";
   public readonly gmcp: GmcpSession;
   public readonly mcpSession: McpSession;
@@ -99,9 +100,10 @@ class MudClient {
     useInputStore.getState().setAutosay(value);
   }
 
-  constructor(host: string, port: number) {
+  constructor(host: string, port: number, secure = true) {
     this.host = host;
     this.port = port;
+    this.secure = secure;
     this.mcpSession = new McpSession({
       sendLine: (line) => this.send(`${line}\r\n`),
     });
@@ -222,7 +224,7 @@ class MudClient {
     this.registerResumeListeners();
     this.awayChannel = true;
     this.registerAwayListeners();
-    const ws = new window.WebSocket(`wss://${this.host}:${this.port}`);
+    const ws = new window.WebSocket(`${this.secure ? "wss" : "ws"}://${this.host}:${this.port}`);
     this.ws = ws;
     this.ws.binaryType = "arraybuffer";
     this.telnet = new TelnetParser(new WebSocketStream(this.ws));

@@ -126,7 +126,11 @@ function syncLocationToServer(client: MudClient, locationPackage?: McpWorldMongo
  * Shared across all modes (telnet, WASM local, WASM host, guest).
  */
 export function createConfiguredClient(): MudClient {
-  const client = new MudClient("mongoose.moo.mud.org", 8765);
+  // VITE_MOO_URL points the client at another server, e.g. ws://localhost:8765
+  // for a local Mongoose (npm run start:local).
+  const server = new URL(import.meta.env.VITE_MOO_URL || "wss://mongoose.moo.mud.org:8765");
+  const secure = server.protocol === "wss:";
+  const client = new MudClient(server.hostname, Number(server.port) || (secure ? 443 : 80), secure);
   // GMCP packages
   const clientFileTransfer = client.gmcp.register(GMCPClientFileTransfer);
   client.configureFileTransfer(clientFileTransfer);
