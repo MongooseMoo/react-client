@@ -204,6 +204,24 @@ record (no `skin`, `hair`, `facial_hair`, `face`, `features`, `build` or `age_ye
   round the box's middle; its head rises on its neck by 10 to 15% of its length, above a box too low for that.
   Their portraits show the whole animal from the side, inside the round backdrop, at every size; people's portraits
   show the head alone below 48 px.
+- The species the game's taxa send (each `$taxon` anatomy's `species`): each its own entry in one of five families,
+  fitted evenly inside the box as the duck is, its portrait a side view of the same shape (a long low animal raised
+  toward the middle of the disc). Four-legged (a body over its legs, a neck to the head with a muzzle in the second
+  colour, nose, eyes, the species' ears, a tail): `mammal`, `bat` (wings), `bear`, `cat`, `dog`, `fox`, `pig`,
+  `rabbit`, `wolf`, `ungulate`, `horse`, `mule`, `cow` (horns), `deer` (antlers), `sheep`, `goat` (horns),
+  `elephant` (fan ears, trunk, ivory tusks, pillar legs), `primate`, `rodent`, `armadillo` (a shell over the back),
+  `tasmanian devil`; sprawling, legs set out to the sides with the belly near the floor: `reptile`, `lizard`,
+  `turtle` (shell), `crocodile`, `amphibian`; and `dragon` (wings, horns). Birds, drawn as the song bird in their own
+  colours: `bird`, `chicken`, `raptor`, `owl`; `duck` is the mallard. Fish and whales (body, pale belly in the second
+  colour, dorsal and side fins, eyes): `fish` with an upright tail fin; `whale`, `blue whale`, `sperm whale` and
+  `dolphin` with level flukes and a blowhole. Arthropods (body raised on jointed legs reaching to the floor): `insect`,
+  `ant` and `bee` (head, thorax, banded abdomen, six legs, feelers; the bee with wings), `arachnid` (two body parts,
+  eight legs), `crustacean` (eight legs, two claws, feelers). Soft-bodied: `jellyfish` (a bell over ten hanging
+  tentacles), `octopus` (mantle, head, eight arms over the floor), `mollusc` and `land slug` (on its foot with eye
+  stalks), `snail` (with a coiled shell), `bivalve` (two shut valves). The second colour sent goes to the accent
+  (belly, muzzle, bands, shell or underside); with only the main colour sent, the accent is a tone of it (darker for
+  the pig, horse, sheep, goat, elephant, armadillo, turtle, bee and ant, lighter for the rest). Noses, hooves, feet,
+  tusks (ivory), horns and antlers (bone) keep their own colours. A plan is drawn between 5 cm and 4 m tall.
 - Any other plan: a plain rounded pillar sized by the box, in the plain person colour (you in blue); the plan token is
   the plain person token and the portrait a plain grey silhouette. No human skin, hair or eye colour is filled in.
 

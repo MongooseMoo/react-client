@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { planParts } from "../map/bodyPlanMesh";
 import { BODY_PLANS, HUMAN_PLAN, resolvePlan } from "./bodyPlan";
-import { GAME_LOOKS, PLAN_CHARACTERS } from "./bodyPlans.fixture";
+import { GAME_LOOKS, PLAN_CHARACTERS, TAXON_FORMS } from "./bodyPlans.fixture";
 import { TEST_CHARACTERS } from "./characters.fixture";
 import { hexToRgb, INK_DARK, INK_LIGHT, overlayHex } from "./colour";
 import { figureFills, figureParams, NEUTRAL_CLOTHING, NEUTRAL_SKIN, tokenColours } from "./figure";
@@ -260,5 +260,59 @@ describe("body plans: portraits", () => {
       a.unmount();
       b.unmount();
     }
+  });
+});
+
+describe("body plans: the taxa's forms", () => {
+  const classes = (appearance: unknown) => {
+    const { container, unmount } = render(<svg aria-hidden="true">{portraitElements(appearance)}</svg>);
+    const found = [...container.querySelectorAll("[class]")].map((e) => e.getAttribute("class"));
+    unmount();
+    return found;
+  };
+
+  it("has a look for every species the game's taxa send", () => {
+    for (const { plan } of TAXON_FORMS) {
+      expect(Object.hasOwn(BODY_PLANS, plan), plan).toBe(true);
+      expect(resolvePlan(form(plan)).kind, plan).toBe("animal");
+    }
+  });
+
+  it("draws each taxon's portrait whole, decorative, with a body and no human parts", () => {
+    for (const { plan } of TAXON_FORMS) {
+      const { container, unmount } = render(<AvatarPortrait appearance={form(plan)} size={32} />);
+      const svg = container.querySelector("svg");
+      expect(svg?.getAttribute("aria-hidden"), plan).toBe("true");
+      expect(svg?.getAttribute("viewBox"), plan).toBe("0 0 64 64");
+      expect(container.querySelectorAll(".avatar-hair, .avatar-facial-hair, .avatar-feature").length, plan).toBe(0);
+      expect(container.querySelectorAll(".avatar-body, .avatar-shell").length, plan).toBeGreaterThan(0);
+      // Every coordinate is a number: a shape value that came out NaN would draw nothing.
+      expect(container.innerHTML.includes("NaN"), plan).toBe(false);
+      unmount();
+    }
+  });
+
+  it("draws each family's own parts in the portrait, as in 3D", () => {
+    expect(classes(form("elephant"))).toEqual(expect.arrayContaining(["avatar-trunk", "avatar-tusk", "avatar-ear", "avatar-leg"]));
+    expect(classes(form("deer"))).toContain("avatar-antler");
+    expect(classes(form("cow"))).toContain("avatar-horn");
+    expect(classes(form("turtle"))).toContain("avatar-shell");
+    expect(classes(form("dragon"))).toEqual(expect.arrayContaining(["avatar-wing", "avatar-tail"]));
+    expect(classes(form("whale"))).toEqual(expect.arrayContaining(["avatar-blowhole", "avatar-fin", "avatar-tail"]));
+    expect(classes(form("fish"))).not.toContain("avatar-blowhole");
+    expect(classes(form("crustacean"))).toContain("avatar-claw");
+    expect(classes(form("bee"))).toEqual(expect.arrayContaining(["avatar-wing", "avatar-antenna", "avatar-band"]));
+    expect(classes(form("arachnid")).filter((c) => c === "avatar-leg").length).toBe(4);
+    expect(classes(form("jellyfish"))).toContain("avatar-tentacle");
+    expect(classes(form("snail"))).toEqual(expect.arrayContaining(["avatar-shell", "avatar-stalk"]));
+    expect(classes(form("chicken"))).toEqual(expect.arrayContaining(["avatar-beak", "avatar-breast"]));
+  });
+
+  it("takes a taxon form's sent covering: the body in the main colour, the accent from the second or a tone of the main", () => {
+    const horse = resolvePlan(form("horse", { covering: { kind: "hide", colours: [{ hex: "#d8c8a8" }, { hex: "#ffffff" }] } }));
+    expect(horse).toMatchObject({ skin: "#d8c8a8", accent: "#ffffff" });
+    const fox = resolvePlan(form("fox", { covering: { kind: "fur", colours: [{ hex: "#8a5a32" }] } }));
+    expect(fox).toMatchObject({ skin: "#8a5a32", accent: overlayHex("#8a5a32", INK_LIGHT, 0.35), head: overlayHex("#8a5a32", INK_DARK, 0.12) });
+    expect(resolvePlan(form("elephant"))).toMatchObject({ skin: BODY_PLANS.elephant.skin, covering: "hide" });
   });
 });

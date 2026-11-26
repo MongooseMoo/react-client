@@ -336,6 +336,8 @@ export const NEUTRAL_CLOTHING = "#4b5262";
  * but give no colour, so they are drawn in one bone tone rather than the hair's colour.
  */
 export const HORN_TONE = "#d6c9a8";
+/** Tusks, in 3D and in the portrait: ivory whatever the covering. */
+export const IVORY = "#efe8d6";
 
 export interface FigureOptions {
   /** Floor to crown, metres: the person's Room.Layout box height. */
