@@ -85,11 +85,48 @@ export interface HumanoidPlan extends PlanColours {
   headShare: number;
 }
 
-export type AnimalKind = "duck" | "snake" | "songbird";
+/**
+ * The animal figures: three drawn one species each (duck, snake, song bird) and the families drawn from a shape
+ * (`quad`, `swim`, `bug`, `arms`, `shell` below), so each species the game's taxa send is one entry.
+ */
+export type AnimalKind = "duck" | "snake" | "songbird" | "quadruped" | "fish" | "arthropod" | "tentacled" | "mollusc";
+
+/** Parts a four-legged body can carry beyond its legs, head and tail. */
+export type QuadPart = "trunk" | "tusks" | "horns" | "antlers" | "shell" | "wings";
+
+/**
+ * A four-legged body, in shares of its body's length from chest to rump (the neck, head and tail are added to that
+ * length): `height` floor to back, `girth` belly to back, `neck`, `head` and `tail` lengths, `leg` a leg's radius.
+ */
+export interface QuadShape {
+  height: number;
+  girth: number;
+  neck: number;
+  head: number;
+  tail: number;
+  leg: number;
+  ears: "pointed" | "round" | "long" | "floppy" | "fan" | "none";
+  /** Legs set out to the sides and the belly near the floor, as a lizard, crocodile, turtle or frog stands. */
+  sprawl?: true;
+  parts?: QuadPart[];
+}
+
+/** How high an arthropod's body is carried on its legs, in body lengths: high enough that the legs show beneath it. */
+export const ARTHROPOD_BODY_Z = 0.24;
 
 export interface AnimalPlan extends PlanColours {
   kind: "animal";
   animal: AnimalKind;
+  /** The `quadruped` figure's shape. */
+  quad?: QuadShape;
+  /** The `fish` figure: `girth` belly to back as a share of its length; `fluke` a whale's level tail and a blowhole. */
+  swim?: { girth: number; fluke?: true };
+  /** The `arthropod` figure: walking legs, a front pair of claws (a crab's), wings over the back (a bee's), feelers. */
+  bug?: { legs: 6 | 8; segments: 2 | 3; claws?: true; wings?: true; antennae?: true };
+  /** The `tentacled` figure: how many arms, hanging from a bell (a jellyfish) or spread from a mantle (an octopus). */
+  arms?: { count: number; mantle?: true };
+  /** The `mollusc` figure's shell: coiled on the back (a snail), two valves (a clam), or none (a slug). */
+  shell?: "coil" | "valves" | "none";
   /** The body's colour. */
   skin: string;
   /** The head; with a covering colour sent and none for the head, a shade darker than the body (TONE_STEP). */
@@ -106,9 +143,121 @@ export type PlanSpec = HumanoidPlan | AnimalPlan;
 
 const AVERAGE: BuildShape = { shoulders: 1, waist: 1, hips: 1, limbs: 1 };
 
+/** The dark of a nose, mouth, hoof or claw: a mark of the species, never taken from the covering. */
+const DARK_MARK = "#2a2420";
+
+/** What a family plan's entry gives: its covering and colours; the rest is the family's. */
+interface FamilyLook {
+  covering: Covering;
+  skin: string;
+  /** The head's colour when the form sends none: the body's unless given. */
+  head?: string;
+  /** Underside, muzzle, bands, shell or belly: lighter or darker than the body, as `tone` says. */
+  accent: string;
+  tone?: "darker" | "lighter";
+  eyes?: string;
+  /** Feet, hooves, legs or claws. */
+  feet?: string;
+  /** Nose, mouth, beak or sting. */
+  mark?: string;
+}
+
+/** A plan of one of the shape-drawn families, its covering's second colour going to the accent. */
+function family(animal: AnimalKind, look: FamilyLook, shape: Partial<AnimalPlan>): AnimalPlan {
+  return {
+    kind: "animal",
+    animal,
+    covering: look.covering,
+    secondary: ["accent"],
+    accentTone: look.tone ?? "lighter",
+    skin: look.skin,
+    head: look.head ?? look.skin,
+    wing: look.skin,
+    accent: look.accent,
+    beak: look.mark ?? DARK_MARK,
+    feet: look.feet ?? DARK_MARK,
+    eyes: look.eyes ?? "#111111",
+    ...shape,
+  };
+}
+
+const quad = (look: FamilyLook, shape: QuadShape) => family("quadruped", look, { quad: shape });
+/** A perching bird drawn as the song bird is, in its own colours: breast in the accent, wings and tail in `wing`. */
+const bird = (skin: string, head: string, wing: string, accent: string, beak: string, feet: string): AnimalPlan => ({
+  kind: "animal",
+  animal: "songbird",
+  covering: "feathers",
+  secondary: ["accent", "wing"],
+  accentTone: "lighter",
+  skin,
+  head,
+  wing,
+  accent,
+  beak,
+  feet,
+  eyes: "#111111",
+});
+
+/**
+ * The families the game's taxa send as `body_plan` (`$taxon` anatomies' `species`, read live 2026-11-23): a body in a
+ * form made from an animal of that taxon. Colours are each animal's common colouring; shapes in shares of the body's
+ * length (QuadShape). Keys exactly as sent.
+ */
+const TAXON_PLANS: Record<string, PlanSpec> = {
+  mammal: quad({ covering: "fur", skin: "#8a6f55", accent: "#c9b49a" }, { height: 0.6, girth: 0.32, neck: 0.15, head: 0.22, tail: 0.3, leg: 0.04, ears: "pointed" }),
+  bat: quad({ covering: "fur", skin: "#4a3a30", accent: "#6e5a4a" }, { height: 0.32, girth: 0.3, neck: 0.04, head: 0.24, tail: 0.1, leg: 0.025, ears: "pointed", parts: ["wings"] }),
+  bear: quad({ covering: "fur", skin: "#5b4030", accent: "#7a5a44" }, { height: 0.62, girth: 0.42, neck: 0.1, head: 0.24, tail: 0.05, leg: 0.07, ears: "round" }),
+  cat: quad({ covering: "fur", skin: "#8c7a66", accent: "#d8cbb8" }, { height: 0.55, girth: 0.25, neck: 0.1, head: 0.18, tail: 0.7, leg: 0.03, ears: "pointed" }),
+  dog: quad({ covering: "fur", skin: "#9a7650", accent: "#d9c3a2" }, { height: 0.68, girth: 0.3, neck: 0.18, head: 0.24, tail: 0.35, leg: 0.035, ears: "floppy" }),
+  fox: quad({ covering: "fur", skin: "#b8642a", accent: "#efe6da" }, { height: 0.5, girth: 0.26, neck: 0.14, head: 0.22, tail: 0.6, leg: 0.025, ears: "pointed" }),
+  pig: quad({ covering: "skin", skin: "#e3b5a4", accent: "#c98f80", tone: "darker", feet: "#6b4a3a" }, { height: 0.55, girth: 0.42, neck: 0.03, head: 0.26, tail: 0.12, leg: 0.045, ears: "floppy" }),
+  rabbit: quad({ covering: "fur", skin: "#9b8a78", accent: "#e8e0d4" }, { height: 0.45, girth: 0.38, neck: 0.04, head: 0.22, tail: 0.08, leg: 0.035, ears: "long" }),
+  wolf: quad({ covering: "fur", skin: "#7d7468", accent: "#cfc8bd" }, { height: 0.68, girth: 0.3, neck: 0.18, head: 0.25, tail: 0.4, leg: 0.035, ears: "pointed" }),
+  ungulate: quad({ covering: "hide", skin: "#8a6a48", accent: "#d8c8b0" }, { height: 0.95, girth: 0.35, neck: 0.3, head: 0.28, tail: 0.25, leg: 0.03, ears: "pointed" }),
+  horse: quad({ covering: "hide", skin: "#7b4a2a", accent: "#2b2420", tone: "darker" }, { height: 1.05, girth: 0.36, neck: 0.45, head: 0.32, tail: 0.4, leg: 0.035, ears: "pointed" }),
+  mule: quad({ covering: "hide", skin: "#6b5a4a", accent: "#cfc2b0" }, { height: 1.0, girth: 0.36, neck: 0.4, head: 0.32, tail: 0.35, leg: 0.035, ears: "long" }),
+  cow: quad({ covering: "hide", skin: "#7a4f33", accent: "#e8dccb" }, { height: 0.75, girth: 0.45, neck: 0.18, head: 0.28, tail: 0.45, leg: 0.045, ears: "floppy", parts: ["horns"] }),
+  deer: quad({ covering: "fur", skin: "#9a6a3e", accent: "#e8dccb" }, { height: 1.0, girth: 0.32, neck: 0.35, head: 0.25, tail: 0.08, leg: 0.025, ears: "pointed", parts: ["antlers"] }),
+  sheep: quad({ covering: "fur", skin: "#e9e3d4", head: "#4a423a", accent: "#d6cebc", tone: "darker" }, { height: 0.7, girth: 0.5, neck: 0.1, head: 0.24, tail: 0.1, leg: 0.03, ears: "floppy" }),
+  goat: quad({ covering: "fur", skin: "#cfc3ae", accent: "#a89a82", tone: "darker" }, { height: 0.8, girth: 0.38, neck: 0.2, head: 0.25, tail: 0.1, leg: 0.03, ears: "pointed", parts: ["horns"] }),
+  elephant: quad({ covering: "hide", skin: "#8a8580", accent: "#76716c", tone: "darker", feet: "#5e5a56" }, { height: 0.72, girth: 0.5, neck: 0.02, head: 0.3, tail: 0.3, leg: 0.09, ears: "fan", parts: ["trunk", "tusks"] }),
+  primate: quad({ covering: "fur", skin: "#4b3a2e", head: "#3e3026", accent: "#c4a98f" }, { height: 0.6, girth: 0.36, neck: 0.05, head: 0.25, tail: 0.1, leg: 0.045, ears: "round" }),
+  rodent: quad({ covering: "fur", skin: "#8a7b6a", accent: "#d4c8b8", mark: "#d98a8a" }, { height: 0.35, girth: 0.35, neck: 0.03, head: 0.25, tail: 0.8, leg: 0.02, ears: "round" }),
+  armadillo: quad({ covering: "hide", skin: "#a49280", accent: "#8a7866", tone: "darker" }, { height: 0.35, girth: 0.38, neck: 0.03, head: 0.22, tail: 0.35, leg: 0.03, ears: "pointed", parts: ["shell"] }),
+  "tasmanian devil": quad({ covering: "fur", skin: "#1e1a18", accent: "#efe8dc", mark: "#c97a7a" }, { height: 0.42, girth: 0.38, neck: 0.05, head: 0.28, tail: 0.3, leg: 0.04, ears: "round" }),
+  reptile: quad({ covering: "scales", skin: "#6b7a3a", accent: "#c8c48a" }, { height: 0.18, girth: 0.14, neck: 0.08, head: 0.18, tail: 0.9, leg: 0.025, ears: "none", sprawl: true }),
+  lizard: quad({ covering: "scales", skin: "#7a8a46", accent: "#d4d09a" }, { height: 0.16, girth: 0.13, neck: 0.08, head: 0.18, tail: 1.0, leg: 0.022, ears: "none", sprawl: true }),
+  turtle: quad({ covering: "scales", skin: "#6b7a4a", accent: "#6b5a3a", tone: "darker" }, { height: 0.3, girth: 0.25, neck: 0.15, head: 0.15, tail: 0.08, leg: 0.05, ears: "none", sprawl: true, parts: ["shell"] }),
+  crocodile: quad({ covering: "scales", skin: "#4a5a34", accent: "#b8b88a" }, { height: 0.14, girth: 0.12, neck: 0.04, head: 0.28, tail: 0.9, leg: 0.03, ears: "none", sprawl: true }),
+  amphibian: quad({ covering: "skin", skin: "#5f8a3e", accent: "#d8d08a", eyes: "#c9a227" }, { height: 0.32, girth: 0.3, neck: 0.02, head: 0.28, tail: 0, leg: 0.04, ears: "none", sprawl: true }),
+  dragon: quad({ covering: "scales", skin: "#7a2e24", accent: "#d9a24a", eyes: "#e0b030" }, { height: 0.7, girth: 0.35, neck: 0.4, head: 0.25, tail: 0.9, leg: 0.05, ears: "none", parts: ["wings", "horns"] }),
+  bird: bird("#7a6a58", "#6a5a48", "#5e5040", "#c9b49a", "#3a3226", "#5a4a3c"),
+  duck: { kind: "animal", animal: "duck", covering: "feathers", secondary: ["head", "wing"], skin: "#8f8272", head: "#1f5e3a", wing: "#9a9690", accent: "#6b3b26", beak: "#e0b22e", feet: "#e07a1f", eyes: "#111111" },
+  chicken: bird("#b8642a", "#a65520", "#8a4a20", "#d48a4a", "#e0b22e", "#e0b22e"),
+  raptor: bird("#6b4a2e", "#e8e0d0", "#5a3e26", "#e8dcc8", "#e0b22e", "#e0b22e"),
+  owl: bird("#8a7058", "#9a8068", "#6e5844", "#e0d4c0", "#3a3226", "#8a7058"),
+  fish: family("fish", { covering: "scales", skin: "#7f8f95", accent: "#e0e3dc", head: "#73838a" }, { swim: { girth: 0.26 } }),
+  whale: family("fish", { covering: "skin", skin: "#4b5560", accent: "#9aa3a8" }, { swim: { girth: 0.2, fluke: true } }),
+  "blue whale": family("fish", { covering: "skin", skin: "#5c7186", accent: "#8ea0b0" }, { swim: { girth: 0.14, fluke: true } }),
+  "sperm whale": family("fish", { covering: "skin", skin: "#4a4a4c", accent: "#6a6a6c" }, { swim: { girth: 0.22, fluke: true } }),
+  dolphin: family("fish", { covering: "skin", skin: "#6f7c88", accent: "#dfe3e6" }, { swim: { girth: 0.2, fluke: true } }),
+  insect: family("arthropod", { covering: "hide", skin: "#3b3326", accent: "#5a4e3a" }, { bug: { legs: 6, segments: 3, antennae: true } }),
+  bee: family("arthropod", { covering: "fur", skin: "#c99a2e", accent: "#2a2420", tone: "darker", head: "#2a2420" }, { bug: { legs: 6, segments: 3, antennae: true, wings: true } }),
+  ant: family("arthropod", { covering: "hide", skin: "#3a2418", accent: "#2a1810", tone: "darker" }, { bug: { legs: 6, segments: 3, antennae: true } }),
+  arachnid: family("arthropod", { covering: "hide", skin: "#3a3430", accent: "#5a504a" }, { bug: { legs: 8, segments: 2 } }),
+  crustacean: family("arthropod", { covering: "hide", skin: "#b8442e", accent: "#e0a080", feet: "#b8442e" }, { bug: { legs: 8, segments: 2, claws: true, antennae: true } }),
+  jellyfish: family("tentacled", { covering: "skin", skin: "#c9b6e0", accent: "#e8dcf4" }, { arms: { count: 10 } }),
+  octopus: family("tentacled", { covering: "skin", skin: "#a0503a", accent: "#d08a70", eyes: "#d9b84a" }, { arms: { count: 8, mantle: true } }),
+  mollusc: family("mollusc", { covering: "skin", skin: "#7a6a4e", accent: "#a89878" }, { shell: "none" }),
+  "land slug": family("mollusc", { covering: "skin", skin: "#6e5e44", accent: "#94846a" }, { shell: "none" }),
+  snail: family("mollusc", { covering: "skin", skin: "#8a7a5e", accent: "#b08a5a" }, { shell: "coil" }),
+  bivalve: family("mollusc", { covering: "skin", skin: "#9a8f80", accent: "#c8bca8" }, { shell: "valves" }),
+};
+
 /**
  * The plans the game uses today (`#2955.body_profiles`, read 2026-11-20 into
- * reports/player-avatars-forms-wire-2026-11-19.md). Keys are `body_plan` exactly as the game sends it.
+ * reports/player-avatars-forms-wire-2026-11-19.md), then the taxa's (TAXON_PLANS). Keys are `body_plan` exactly as the
+ * game sends it.
  */
 export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
   werewolf: {
@@ -294,6 +443,7 @@ export const BODY_PLANS: Readonly<Record<string, PlanSpec>> = {
     feet: "#5a4a3c",
     eyes: "#111111",
   },
+  ...TAXON_PLANS,
 };
 
 /** A plan with the wire's colours for the form put over its own (`covering`, `eyes`, and for `covers: "head"`, `skin`). */

@@ -1,7 +1,7 @@
 import type React from "react";
-import type { AnimalPlan, HumanoidPlan } from "./bodyPlan";
+import { type AnimalPlan, ARTHROPOD_BODY_Z, type HumanoidPlan, type QuadShape } from "./bodyPlan";
 import { INK_DARK, inkFor, overlayHex } from "./colour";
-import { BUILDS, type FigureParams } from "./figure";
+import { BUILDS, type FigureParams, HORN_TONE, IVORY } from "./figure";
 import { markElements, PORTRAIT_BACKDROP } from "./portrait";
 
 /**
@@ -181,5 +181,210 @@ function animalPortrait(p: FigureParams, plan: AnimalPlan): React.ReactNode[] {
         <path key="pupils" fill="none" stroke={INK_DARK} strokeWidth={0.5} d="M39,15 L39,17 M33.5,14.9 L33.5,16.7" />,
         <path key="tongue" className="avatar-tongue" fill="none" stroke={plan.beak} strokeWidth={0.9} strokeLinecap="round" d="M43.5,19 L48,20 L50,18.5 M48,20 L50,21.5" />,
       ];
+    case "quadruped":
+      return plan.quad ? quadrupedPortrait(plan, plan.quad, ink) : [];
+    case "fish":
+      return fishPortrait(plan, plan.swim ?? { girth: 0.25 }, ink);
+    case "arthropod":
+      return arthropodPortrait(plan, plan.bug ?? { legs: 6, segments: 3 }, ink);
+    case "tentacled":
+      return tentacledPortrait(plan, plan.arms ?? { count: 8 }, ink);
+    case "mollusc":
+      return molluscPortrait(plan, plan.shell ?? "none", ink);
   }
+}
+
+/**
+ * A side view facing right, drawn in the shape's own units (x forward, z up) and fitted so the whole animal spans
+ * at most x 6 to 58, standing no lower than y 60: `at(x, z)` gives the portrait point, `len(d)` a length.
+ */
+function sideView(back: number, front: number, top: number) {
+  const s = Math.min(52 / (back + front), 50 / top);
+  const ox = 32 - ((front - back) * s) / 2;
+  // A tall animal stands on y 60; a long low one (a crocodile, a fish) is raised toward the middle of the disc.
+  const floor = Math.min(60, 38 + (top * s) / 2);
+  const at = (x: number, z: number) => `${n(ox + x * s)},${n(floor - z * s)}`;
+  const X = (x: number) => n(ox + x * s);
+  const Y = (z: number) => n(floor - z * s);
+  return { s, at, X, Y, len: (d: number) => n(d * s) };
+}
+
+/** The four-legged figure from the side, as bodyPlanMesh builds it: legs, body and belly, neck, head and its parts. */
+function quadrupedPortrait(plan: AnimalPlan, q: QuadShape, ink: string): React.ReactNode[] {
+  const line = { stroke: ink, strokeWidth: 1 };
+  const g = q.girth;
+  const belly = q.sprawl ? g * 0.35 : Math.max(q.leg * 2, q.height - g);
+  const midZ = belly + g / 2;
+  const rise = q.neck > 0.12 ? 0.9 : 0.25;
+  const sx = 0.4;
+  const sz = midZ + g * 0.2;
+  const nx = sx + Math.cos(rise) * q.neck;
+  const nz = sz + Math.sin(rise) * q.neck;
+  const hr = q.head / 2;
+  const hx = nx + hr * 0.7;
+  const hz = nz + hr * 0.2;
+  const parts = q.parts ?? [];
+  const tailBack = q.tail > 0 ? 0.48 + q.tail * 0.85 : 0.5;
+  const top = Math.max(midZ + g / 2, hz + hr * (parts.includes("antlers") ? 2.6 : q.ears === "long" ? 2.4 : 1.4), parts.includes("wings") ? midZ + 0.5 : 0);
+  const v = sideView(tailBack, hx + hr * 1.3, top);
+  const out: React.ReactNode[] = [];
+  const far = overlayHex(plan.skin, INK_DARK, 0.25);
+  if (parts.includes("wings")) out.push(<path key="wing-far" className="avatar-wing" fill={overlayHex(plan.wing, INK_DARK, 0.2)} {...line} d={`M${v.at(0.1, midZ + g * 0.3)} L${v.at(-0.25, midZ + 0.55)} L${v.at(-0.15, midZ + 0.2)} Z`} />);
+  if (q.tail > 0) {
+    const tipZ = Math.max(q.sprawl ? g * 0.12 : g * 0.08, midZ + g * 0.15 - q.tail * 0.45);
+    const w = v.len(q.sprawl ? g * 0.4 : plan.covering === "fur" ? g * 0.2 : g * 0.1);
+    out.push(<path key="tail-edge" fill="none" stroke={ink} strokeWidth={Math.max(1.6, w + 1.4)} strokeLinecap="round" d={`M${v.at(-0.45, midZ + g * 0.15)} L${v.at(-0.48 - q.tail * 0.85, tipZ)}`} />);
+    out.push(<path key="tail" className="avatar-tail" fill="none" stroke={plan.skin} strokeWidth={Math.max(0.6, w)} strokeLinecap="round" d={`M${v.at(-0.45, midZ + g * 0.15)} L${v.at(-0.48 - q.tail * 0.85, tipZ)}`} />);
+  }
+  // Legs: the far pair a shade darker behind the body, the near pair in front of it.
+  const legW = Math.max(1.2, v.len(q.leg * 2));
+  for (const [k, x, near] of [["fb", -0.28, false], ["ff", 0.36, false], ["nb", -0.32, true], ["nf", 0.32, true]] as const) {
+    const fill = near ? plan.skin : far;
+    const legs = <rect key={`leg-${k}`} className="avatar-leg" x={n(Number(v.X(x)) - legW / 2)} y={v.Y(midZ)} width={n(legW)} height={n(Number(v.Y(0)) - Number(v.Y(midZ)))} fill={fill} {...line} />;
+    const hoof = <rect key={`foot-${k}`} className="avatar-foot" x={n(Number(v.X(x)) - legW * 0.6)} y={n(Number(v.Y(0)) - legW * 0.5)} width={n(legW * 1.2)} height={n(legW * 0.5)} fill={plan.feet} />;
+    if (!near) out.push(legs, hoof);
+    else out.push(<g key={`near-${k}`}>{legs}{hoof}</g>);
+  }
+  // The near legs go over the body; hold them back until it is drawn.
+  const nearLegs = out.splice(out.length - 2, 2);
+  out.push(<ellipse key="body" className="avatar-body" cx={v.X(0)} cy={v.Y(midZ)} rx={v.len(0.5)} ry={v.len(g / 2)} fill={plan.skin} {...line} />);
+  out.push(<ellipse key="belly" className="avatar-belly" cx={v.X(0.04)} cy={v.Y(midZ - g * 0.22)} rx={v.len(0.34)} ry={v.len(g * 0.2)} fill={plan.accent} />);
+  if (parts.includes("shell")) out.push(<path key="shell" className="avatar-shell" fill={plan.accent} {...line} d={`M${v.at(-0.56, midZ - g * 0.1)} C${v.at(-0.5, midZ + g * 1.0)} ${v.at(0.5, midZ + g * 1.0)} ${v.at(0.56, midZ - g * 0.1)} Z`} />);
+  out.push(...nearLegs);
+  if (q.neck > 0.03) {
+    const w = v.len(Math.max(q.leg * 2.2, g * 0.4));
+    out.push(<path key="neck-edge" fill="none" stroke={ink} strokeWidth={w + 1.4} strokeLinecap="round" d={`M${v.at(sx, sz)} L${v.at(nx, nz)}`} />);
+    out.push(<path key="neck" className="avatar-neck" fill="none" stroke={plan.skin} strokeWidth={w} strokeLinecap="round" d={`M${v.at(sx, sz)} L${v.at(nx, nz)}`} />);
+  }
+  if (parts.includes("wings")) out.push(<path key="wing" className="avatar-wing" fill={plan.wing} {...line} d={`M${v.at(0.2, midZ + g * 0.35)} L${v.at(-0.1, midZ + 0.5)} L${v.at(0.05, midZ + 0.2)} L${v.at(-0.2, midZ + 0.15)} Z`} />);
+  const earAt = (dx: number, dz: number) => v.at(hx - hr * dx, hz + hr * dz);
+  switch (q.ears) {
+    case "pointed":
+      out.push(<path key="ear" className="avatar-ear" fill={plan.head} {...line} d={`M${earAt(0.45, 0.4)} L${earAt(0.3, 1.25)} L${earAt(0.05, 0.55)} Z`} />);
+      break;
+    case "round":
+      out.push(<circle key="ear" className="avatar-ear" cx={v.X(hx - hr * 0.3)} cy={v.Y(hz + hr * 0.75)} r={v.len(hr * 0.3)} fill={plan.head} {...line} />);
+      break;
+    case "long":
+      out.push(<ellipse key="ear" className="avatar-ear" cx={v.X(hx - hr * 0.45)} cy={v.Y(hz + hr * 1.5)} rx={v.len(hr * 0.22)} ry={v.len(hr * 0.9)} transform={`rotate(-15 ${v.X(hx - hr * 0.45)} ${v.Y(hz + hr * 1.5)})`} fill={plan.head} {...line} />);
+      break;
+    case "floppy":
+      out.push(<ellipse key="ear" className="avatar-ear" cx={v.X(hx - hr * 0.35)} cy={v.Y(hz)} rx={v.len(hr * 0.25)} ry={v.len(hr * 0.55)} fill={overlayHex(plan.head, INK_DARK, 0.2)} {...line} />);
+      break;
+    default:
+      break;
+  }
+  out.push(<ellipse key="head" className="avatar-head" cx={v.X(hx)} cy={v.Y(hz)} rx={v.len(hr)} ry={v.len(hr * 0.75)} fill={plan.head} {...line} />);
+  if (q.ears === "fan") out.push(<ellipse key="ear" className="avatar-ear" cx={v.X(hx - hr * 0.5)} cy={v.Y(hz - hr * 0.1)} rx={v.len(hr * 0.6)} ry={v.len(hr * 0.85)} fill={overlayHex(plan.head, INK_DARK, 0.12)} {...line} />);
+  out.push(<ellipse key="muzzle" className="avatar-muzzle" cx={v.X(hx + hr * 0.75)} cy={v.Y(hz - hr * 0.25)} rx={v.len(hr * 0.42)} ry={v.len(hr * 0.35)} fill={plan.accent} {...line} />);
+  out.push(<circle key="nose" className="avatar-nose" cx={v.X(hx + hr * 1.12)} cy={v.Y(hz - hr * 0.15)} r={Math.max(0.8, v.len(hr * 0.12))} fill={plan.beak} />);
+  out.push(<circle key="eye" className="avatar-eye" cx={v.X(hx + hr * 0.35)} cy={v.Y(hz + hr * 0.25)} r={Math.max(1, v.len(hr * 0.13))} fill={plan.eyes} />);
+  if (parts.includes("trunk")) {
+    const w = v.len(hr * 0.4);
+    const d = `M${v.at(hx + hr * 0.8, hz - hr * 0.2)} Q${v.at(hx + hr * 1.5, hz - hr * 1.2)} ${v.at(hx + hr * 1.1, Math.max(q.leg, 0.06))}`;
+    out.push(<path key="trunk-edge" fill="none" stroke={ink} strokeWidth={w + 1.4} strokeLinecap="round" d={d} />, <path key="trunk" className="avatar-trunk" fill="none" stroke={plan.head} strokeWidth={w} strokeLinecap="round" d={d} />);
+  }
+  if (parts.includes("tusks")) out.push(<path key="tusk" className="avatar-tusk" fill={IVORY} {...line} d={`M${v.at(hx + hr * 0.6, hz - hr * 0.55)} Q${v.at(hx + hr * 1.6, hz - hr * 1.0)} ${v.at(hx + hr * 1.7, hz - hr * 0.4)} L${v.at(hx + hr * 0.75, hz - hr * 0.4)} Z`} />);
+  if (parts.includes("horns")) out.push(<path key="horn" className="avatar-horn" fill={HORN_TONE} {...line} d={`M${earAt(0.1, 0.6)} Q${earAt(-0.2, 1.4)} ${earAt(-0.5, 1.3)} L${earAt(-0.15, 0.6)} Z`} />);
+  if (parts.includes("antlers")) out.push(<path key="antler" className="avatar-antler" fill="none" stroke={HORN_TONE} strokeWidth={1.6} strokeLinecap="round" d={`M${earAt(0.1, 0.6)} L${earAt(0.5, 2.4)} M${earAt(0.3, 1.5)} L${earAt(-0.2, 2.0)} M${earAt(0.45, 2.1)} L${earAt(0.0, 2.5)}`} />);
+  return out;
+}
+
+/** A fish or whale from the side: body and pale belly, head, eye, fins, and an upright tail fin or a whale's flukes. */
+function fishPortrait(plan: AnimalPlan, s: { girth: number; fluke?: true }, ink: string): React.ReactNode[] {
+  const line = { stroke: ink, strokeWidth: 1 };
+  const g = s.girth;
+  const v = sideView(0.75, 0.55, Math.max(g * 1.35, 0.42));
+  const lift = Math.max(0, (0.42 - g * 1.35) / 2);
+  const z = (k: number) => lift + g * k;
+  const tail = s.fluke
+    ? `M${v.at(-0.42, z(0.5))} L${v.at(-0.72, z(0.72))} Q${v.at(-0.62, z(0.5))} ${v.at(-0.72, z(0.28))} Z`
+    : `M${v.at(-0.42, z(0.5))} L${v.at(-0.72, z(1.05))} L${v.at(-0.62, z(0.5))} L${v.at(-0.72, z(-0.05))} Z`;
+  const out: React.ReactNode[] = [
+    <path key="tail" className="avatar-tail" fill={plan.skin} {...line} d={tail} />,
+    <path key="fin-top" className="avatar-fin" fill={plan.skin} {...line} d={`M${v.at(0.08, z(0.95))} L${v.at(-0.12, z(1.3))} L${v.at(-0.2, z(0.92))} Z`} />,
+    <ellipse key="body" className="avatar-body" cx={v.X(0)} cy={v.Y(z(0.5))} rx={v.len(0.5)} ry={v.len(g / 2)} fill={plan.skin} {...line} />,
+    <ellipse key="belly" className="avatar-belly" cx={v.X(0.04)} cy={v.Y(z(0.3))} rx={v.len(0.4)} ry={v.len(g * 0.18)} fill={plan.accent} />,
+    <ellipse key="head" className="avatar-head" cx={v.X(0.36)} cy={v.Y(z(0.52))} rx={v.len(0.16)} ry={v.len(g * 0.4)} fill={plan.head} />,
+    <ellipse key="fin" className="avatar-fin" cx={v.X(0.12)} cy={v.Y(z(0.28))} rx={v.len(0.12)} ry={v.len(g * 0.12)} transform={`rotate(20 ${v.X(0.12)} ${v.Y(z(0.28))})`} fill={overlayHex(plan.skin, INK_DARK, 0.15)} {...line} />,
+    <circle key="eye" className="avatar-eye" cx={v.X(0.38)} cy={v.Y(z(0.6))} r={Math.max(1, v.len(g * 0.07))} fill={plan.eyes} />,
+    <path key="mouth" className="avatar-mouth" fill="none" stroke={ink} strokeWidth={0.8} strokeLinecap="round" d={`M${v.at(0.5, z(0.42))} L${v.at(0.36, z(0.4))}`} />,
+  ];
+  if (s.fluke) out.push(<circle key="blowhole" className="avatar-blowhole" cx={v.X(0.22)} cy={v.Y(z(0.99))} r={0.9} fill={INK_DARK} />);
+  return out;
+}
+
+/** An insect, spider or crab from the side: its body parts in a row, legs bent down to the floor, claws, wings and feelers. */
+function arthropodPortrait(plan: AnimalPlan, b: NonNullable<AnimalPlan["bug"]>, ink: string): React.ReactNode[] {
+  const line = { stroke: ink, strokeWidth: 1 };
+  const v = sideView(0.46, b.claws ? 0.68 : 0.5, b.wings ? 0.6 : 0.5);
+  const h = ARTHROPOD_BODY_Z;
+  const out: React.ReactNode[] = [];
+  const headX = b.segments === 3 ? 0.36 : 0.32;
+  for (let i = 0; i < b.legs / 2; i++) {
+    const x = 0.2 - (i * 0.3) / (b.legs / 2);
+    const spread = (i - (b.legs / 2 - 1) / 2) * 0.12;
+    out.push(<path key={`leg${i}`} className="avatar-leg" fill="none" stroke={plan.feet === plan.skin ? ink : plan.feet} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" d={`M${v.at(x, h)} L${v.at(x - spread * 0.6, h + 0.14)} L${v.at(x - spread * 1.4, 0.01)}`} />);
+  }
+  if (b.wings) out.push(<ellipse key="wing" className="avatar-wing" cx={v.X(-0.08)} cy={v.Y(h + 0.17)} rx={v.len(0.22)} ry={v.len(0.08)} transform={`rotate(-12 ${v.X(-0.08)} ${v.Y(h + 0.17)})`} fill="#e6eef2" fillOpacity={0.8} {...line} />);
+  if (b.segments === 3) {
+    out.push(<ellipse key="abdomen" className="avatar-body" cx={v.X(-0.22)} cy={v.Y(h)} rx={v.len(0.24)} ry={v.len(0.15)} fill={plan.skin} {...line} />);
+    for (const x of [-0.15, -0.3]) out.push(<path key={`band${x}`} className="avatar-band" fill="none" stroke={plan.accent} strokeWidth={Math.max(1, v.len(0.04))} d={`M${v.at(x, h + 0.14)} L${v.at(x, h - 0.14)}`} />);
+    out.push(<ellipse key="thorax" className="avatar-body" cx={v.X(0.12)} cy={v.Y(h)} rx={v.len(0.12)} ry={v.len(0.09)} fill={plan.skin} {...line} />);
+  } else {
+    out.push(<ellipse key="abdomen" className="avatar-body" cx={v.X(-0.2)} cy={v.Y(h)} rx={v.len(0.24)} ry={v.len(0.19)} fill={plan.accent} {...line} />);
+    out.push(<ellipse key="body" className="avatar-body" cx={v.X(0.12)} cy={v.Y(h)} rx={v.len(0.19)} ry={v.len(0.12)} fill={plan.skin} {...line} />);
+  }
+  out.push(<circle key="head" className="avatar-head" cx={v.X(headX)} cy={v.Y(h)} r={v.len(0.08)} fill={plan.head} {...line} />);
+  out.push(<circle key="eye" className="avatar-eye" cx={v.X(headX + 0.04)} cy={v.Y(h + 0.03)} r={Math.max(0.9, v.len(0.03))} fill={plan.eyes} />);
+  if (b.claws) out.push(<path key="claw" className="avatar-claw" fill={plan.skin} {...line} d={`M${v.at(0.28, h)} L${v.at(0.48, h + 0.04)} L${v.at(0.66, h + 0.08)} L${v.at(0.6, h)} L${v.at(0.66, h - 0.04)} L${v.at(0.48, h - 0.03)} Z`} />);
+  if (b.antennae) out.push(<path key="antenna" className="avatar-antenna" fill="none" stroke={INK_DARK} strokeWidth={0.8} strokeLinecap="round" d={`M${v.at(headX + 0.04, h + 0.06)} Q${v.at(headX + 0.2, h + 0.3)} ${v.at(headX + 0.14, h + 0.36)}`} />);
+  return out;
+}
+
+/** A jellyfish (a bell over hanging tentacles) or an octopus (mantle, head and eye, arms curling over the floor). */
+function tentacledPortrait(plan: AnimalPlan, a: { count: number; mantle?: true }, ink: string): React.ReactNode[] {
+  const line = { stroke: ink, strokeWidth: 1 };
+  const out: React.ReactNode[] = [];
+  if (!a.mantle) {
+    for (let i = 0; i < Math.min(a.count, 7); i++) {
+      const x = 18 + i * 4.7;
+      out.push(<path key={`t${i}`} className="avatar-tentacle" fill="none" stroke={plan.accent} strokeWidth={1.2} strokeLinecap="round" d={`M${n(x)},30 Q${n(x - 3)},40 ${n(x)},48 T${n(x)},60`} />);
+    }
+    out.push(<path key="bell" className="avatar-body" fill={plan.skin} {...line} d="M12,31 C12,8 52,8 52,31 Q32,35 12,31 Z" />);
+    out.push(<ellipse key="inner" className="avatar-belly" cx={32} cy={24} rx={11} ry={5} fill={plan.accent} />);
+    return out;
+  }
+  for (let i = 0; i < 4; i++) {
+    const x = 18 + i * 9;
+    out.push(<path key={`a${i}`} className="avatar-tentacle" fill="none" stroke={plan.skin} strokeWidth={3} strokeLinecap="round" d={`M${n(x + 4)},46 Q${n(x - 4)},56 ${n(x + 2)},60 T${n(x + 8)},57`} />);
+  }
+  out.push(<ellipse key="mantle" className="avatar-body" cx={26} cy={26} rx={13} ry={16} transform="rotate(-25 26 26)" fill={plan.skin} {...line} />);
+  out.push(<circle key="head" className="avatar-head" cx={36} cy={44} r={9} fill={plan.head} {...line} />);
+  out.push(<circle key="eye" className="avatar-eye" cx={40} cy={42} r={1.8} fill={plan.eyes} />);
+  return out;
+}
+
+/** A slug or snail from the side, on its foot with eye stalks raised, a snail's coiled shell on its back; or a shut clam. */
+function molluscPortrait(plan: AnimalPlan, shell: "coil" | "valves" | "none", ink: string): React.ReactNode[] {
+  const line = { stroke: ink, strokeWidth: 1 };
+  if (shell === "valves") {
+    return [
+      <path key="lower" className="avatar-shell" fill={plan.skin} {...line} d="M8,44 C10,60 54,60 56,44 Z" />,
+      <path key="upper" className="avatar-shell" fill={plan.accent} {...line} d="M8,44 C10,24 54,24 56,44 Z" />,
+      <path key="ridges" fill="none" stroke={overlayHex(plan.accent, INK_DARK, 0.3)} strokeWidth={0.8} d="M32,44 L32,29 M32,44 L22,31 M32,44 L42,31 M32,44 L14,37 M32,44 L50,37" />,
+    ];
+  }
+  const out: React.ReactNode[] = [
+    <path key="stalks" className="avatar-stalk" fill="none" stroke={plan.head} strokeWidth={1.4} strokeLinecap="round" d="M50,50 L54,36 M47,50 L48,37" />,
+    <circle key="eye-r" className="avatar-eye" cx={54} cy={35.5} r={1.4} fill={INK_DARK} />,
+    <circle key="eye-l" className="avatar-eye" cx={48} cy={36.5} r={1.2} fill={INK_DARK} />,
+    <path key="body" className="avatar-body" fill={plan.skin} {...line} d="M4,58 C10,52 30,50 44,48 C52,46 56,52 54,56 C52,59 30,60 4,58 Z" />,
+    <path key="foot" className="avatar-belly" fill="none" stroke={plan.accent} strokeWidth={1.6} d="M8,57.5 C24,58.5 40,58.5 52,56" />,
+  ];
+  if (shell === "coil") {
+    out.push(<circle key="shell" className="avatar-shell" cx={26} cy={40} r={13} fill={plan.accent} {...line} />);
+    out.push(<path key="whorl" fill="none" stroke={overlayHex(plan.accent, INK_DARK, 0.35)} strokeWidth={1} d="M26,40 m-3,0 a3,3 0 1,1 6,0 a6,6 0 1,1 -12,0 a9,9 0 1,1 18,0" />);
+  }
+  return out;
 }

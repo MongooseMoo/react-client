@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { BODY_PLANS } from "../avatar/bodyPlan";
-import { GAME_LOOKS, LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS } from "../avatar/bodyPlans.fixture";
+import { GAME_LOOKS, LIVE_FORM_CHARACTERS, PLAN_CHARACTERS, REAL_SIZE_FORM_CHARACTERS, TAXON_FORMS } from "../avatar/bodyPlans.fixture";
 import { contrast, INK_DARK } from "../avatar/colour";
 import { figureParams, NEUTRAL_CLOTHING } from "../avatar/figure";
 import { HOCK, KNEE } from "./bodyFrames";
@@ -463,5 +463,88 @@ describe("animal forms at their real size (second live check of 2026-11-20)", ()
       group.traverse((o) => { if (o === ring) inside = true; });
       expect(inside).toBe(false);
     }
+  });
+});
+
+describe("the taxa's body plans (body_plan from each $taxon anatomy)", () => {
+  const taxonParams = (plan: string) => {
+    const form = TAXON_FORMS.find((f) => f.plan === plan);
+    if (!form) throw new Error(plan);
+    const [width, depth, height] = form.box;
+    return figureParams({ label: `a ${plan}`, body_plan: plan, posture: "standing" }, { height, footprint: { width, depth } });
+  };
+  const partNames = (plan: string) => planParts(taxonParams(plan)).map((x) => x.name);
+
+  it("draws every taxon's plan as its own animal, within the triangle budget and its box, standing on the floor", () => {
+    for (const { plan, box: [w, d, h] } of TAXON_FORMS) {
+      const p = taxonParams(plan);
+      expect(p.plan.kind, plan).toBe("animal");
+      const { g, box } = bounds(p);
+      const triangles = (g.getIndex()?.count ?? 0) / 3;
+      expect(triangles, plan).toBeGreaterThan(20);
+      expect(triangles, plan).toBeLessThan(5000);
+      expect(box.max.x - box.min.x, plan).toBeLessThanOrEqual(w * 1.01);
+      // A perching bird stands its box's height; its beak-to-tail length is its own (as the song bird's).
+      if (p.plan.kind === "animal" && p.plan.animal !== "songbird") expect(box.max.y - box.min.y, plan).toBeLessThanOrEqual(d * 1.01);
+      // figureParams draws a plan between 5 cm and 4 m tall.
+      const tall = Math.min(4, Math.max(0.05, h));
+      expect(box.max.z, plan).toBeLessThanOrEqual(tall * 1.01);
+      expect(box.min.z, plan).toBeGreaterThan(-tall * 0.01);
+    }
+  });
+
+  it("faces each animal with a head forward (+y)", () => {
+    for (const { plan } of TAXON_FORMS) {
+      if (plan === "jellyfish" || plan === "bivalve") continue;
+      const head = planParts(taxonParams(plan)).find((x) => x.name === "head");
+      expect(head, plan).toBeDefined();
+      const at = new THREE.Box3().setFromBufferAttribute(head?.geometry.getAttribute("position") as THREE.BufferAttribute);
+      expect(at.getCenter(new THREE.Vector3()).y, plan).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives each family its own parts: trunk and tusks, antlers, horns, shell, wings, flukes, claws, tentacles", () => {
+    expect(partNames("elephant")).toEqual(expect.arrayContaining(["trunk", "tusk", "ear", "leg", "tail"]));
+    expect(partNames("deer")).toEqual(expect.arrayContaining(["antler", "neck"]));
+    expect(partNames("cow")).toContain("horn");
+    expect(partNames("turtle")).toContain("shell");
+    expect(partNames("armadillo")).toContain("shell");
+    expect(partNames("dragon")).toEqual(expect.arrayContaining(["wing", "horn", "tail"]));
+    expect(partNames("bat")).toContain("wing");
+    expect(partNames("blue whale")).toEqual(expect.arrayContaining(["blowhole", "fin", "tail"]));
+    expect(partNames("fish")).not.toContain("blowhole");
+    expect(partNames("crustacean").filter((x) => x === "claw").length).toBe(4);
+    expect(partNames("arachnid").filter((x) => x === "leg").length).toBe(16);
+    expect(partNames("insect").filter((x) => x === "leg").length).toBe(12);
+    expect(partNames("bee")).toEqual(expect.arrayContaining(["wing", "antenna", "band"]));
+    expect(partNames("jellyfish").filter((x) => x === "tentacle").length).toBe(10);
+    expect(partNames("octopus").filter((x) => x === "arm").length).toBe(16);
+    expect(partNames("snail")).toEqual(expect.arrayContaining(["shell", "stalk"]));
+    expect(partNames("land slug")).not.toContain("shell");
+    expect(partNames("bivalve")).toEqual(["shell", "shell"]);
+  });
+
+  it("lays a whale's flukes level and a fish's tail fin upright", () => {
+    const tailBox = (plan: string) => {
+      const box = new THREE.Box3();
+      for (const part of planParts(taxonParams(plan)).filter((x) => x.name === "tail")) box.union(new THREE.Box3().setFromBufferAttribute(part.geometry.getAttribute("position") as THREE.BufferAttribute));
+      return box.getSize(new THREE.Vector3());
+    };
+    const whale = tailBox("whale");
+    const fish = tailBox("fish");
+    expect(whale.x).toBeGreaterThan(whale.z);
+    expect(fish.z).toBeGreaterThan(fish.x);
+  });
+
+  it("stands a sprawling reptile low with its feet out past its body, and a horse tall on straight legs", () => {
+    const croc = bounds(taxonParams("crocodile")).box;
+    const horse = bounds(taxonParams("horse")).box;
+    const body = (plan: string) => new THREE.Box3().setFromBufferAttribute(planParts(taxonParams(plan)).find((x) => x.name === "body")?.geometry.getAttribute("position") as THREE.BufferAttribute);
+    // The crocodile's feet reach past its body's sides; the horse's legs stay under its body.
+    expect(croc.max.x - croc.min.x).toBeGreaterThan((body("crocodile").max.x - body("crocodile").min.x) * 1.3);
+    expect(horse.max.x - horse.min.x).toBeLessThan((body("horse").max.x - body("horse").min.x) * 1.3);
+    // The horse's belly is well off the floor, the crocodile's close to it.
+    expect(body("horse").min.z / horse.max.z).toBeGreaterThan(0.3);
+    expect(body("crocodile").min.z / croc.max.z).toBeLessThan(0.4);
   });
 });

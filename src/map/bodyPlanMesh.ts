@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import type { AnimalPlan, HumanoidPlan } from "../avatar/bodyPlan";
+import { type AnimalPlan, ARTHROPOD_BODY_Z, type HumanoidPlan, type QuadShape } from "../avatar/bodyPlan";
 import { INK_DARK, overlayHex } from "../avatar/colour";
-import { type FigureParams, HORN_TONE } from "../avatar/figure";
+import { type FigureParams, HORN_TONE, IVORY } from "../avatar/figure";
 import { type BodyFrames, builtFrames, frameEnd } from "./bodyFrames";
 import { ball, block, cone, jointedLimb, limb, type Part, placed, trunk, wing } from "./figureMesh";
 
@@ -279,11 +279,7 @@ function humanoidParts(p: FigureParams, plan: HumanoidPlan): Part[] {
 function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
   const H = p.height;
   const snake = plan.animal === "snake";
-  const parts = snake
-    ? snakeParts(plan, p.footprint?.width ?? H * 2, p.footprint?.depth ?? H * 8, H)
-    : plan.animal === "duck"
-      ? duckParts(plan)
-      : songbirdParts(plan);
+  const parts = snake ? snakeParts(plan, p.footprint?.width ?? H * 2, p.footprint?.depth ?? H * 8, H) : familyParts(plan);
   // Its real extent, measured, and centred over the box's middle on the floor.
   const box = new THREE.Box3();
   for (const part of parts) {
@@ -299,6 +295,256 @@ function animalParts(p: FigureParams, plan: AnimalPlan): Part[] {
   // drawn 5 cm tall (the second live check of 2026-11-20 saw a speck).
   const k = snake ? 1 : plan.animal === "songbird" ? Math.min(width / extent.x, H / extent.z) : Math.min(width / extent.x, depth / extent.y, H / extent.z);
   return transform(parts, new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-middle.x, -middle.y, -box.min.z)));
+}
+
+/** The parts of an animal other than the snake, at its natural proportions, before fitting to its box. */
+function familyParts(plan: AnimalPlan): Part[] {
+  switch (plan.animal) {
+    case "duck":
+      return duckParts(plan);
+    case "quadruped":
+      return plan.quad ? quadrupedParts(plan, plan.quad) : songbirdParts(plan);
+    case "fish":
+      return fishParts(plan, plan.swim ?? { girth: 0.25 });
+    case "arthropod":
+      return arthropodParts(plan, plan.bug ?? { legs: 6, segments: 3 });
+    case "tentacled":
+      return tentacledParts(plan, plan.arms ?? { count: 8 });
+    case "mollusc":
+      return molluscParts(plan, plan.shell ?? "none");
+    default:
+      return songbirdParts(plan);
+  }
+}
+
+/**
+ * A four-legged animal one unit long from chest to rump, facing +y: a body over its legs (straight down, or set out
+ * to the sides and bent for a sprawling reptile or frog), a neck rising to the head with a muzzle in the accent, nose,
+ * eyes and the shape's ears, a tail, and the shape's parts (an elephant's trunk and tusks, horns, antlers, a shell
+ * over the back, wings).
+ */
+function quadrupedParts(plan: AnimalPlan, q: QuadShape): Part[] {
+  const out: Part[] = [];
+  const g = q.girth;
+  const half = 0.5;
+  const belly = q.sprawl ? g * 0.35 : Math.max(q.leg * 2, q.height - g);
+  const midZ = belly + g / 2;
+  const halfW = g * (q.sprawl ? 0.6 : 0.42);
+  out.push(named(ball(v(0, 0, midZ), 1, plan.skin, v(halfW, half, g / 2), 12), "body"));
+  out.push(named(ball(v(0, 0.04, midZ - g * 0.2), 1, plan.accent, v(halfW * 0.82, half * 0.72, g * 0.32), 10), "belly"));
+  for (const y of [0.32, -0.32]) {
+    for (const side of [-1, 1]) {
+      const top = v(side * halfW * 0.6, y, midZ - g * 0.1);
+      if (q.sprawl) {
+        // Out to the side to an elbow or knee level with the body, then down to the foot beyond it.
+        const knee = v(side * (halfW + g * 0.45), y, midZ);
+        const foot = v(side * (halfW + g * 0.7), y + 0.05, q.leg);
+        out.push(named(limb(top, knee, q.leg, plan.skin, false), "leg"), named(limb(knee, foot, q.leg * 0.85, plan.skin, false), "leg"));
+        out.push(named(ball(foot.clone().setZ(q.leg * 0.5), q.leg * 1.4, plan.feet, v(1.2, 1.4, 0.4), 6), "foot"));
+      } else {
+        const foot = v(side * halfW * 0.6, y, q.leg);
+        out.push(named(limb(top, foot, q.leg, plan.skin, false), "leg"));
+        out.push(named(ball(foot.clone().setZ(q.leg * 0.5), q.leg * 1.15, plan.feet, v(1, 1.2, 0.5), 6), "foot"));
+      }
+    }
+  }
+  // The neck rises steeply when long (a horse's, a deer's), barely when short (a pig's, a frog's).
+  const shoulder = v(0, half * 0.8, midZ + g * 0.2);
+  const rise = q.neck > 0.12 ? 0.9 : 0.25;
+  const neckEnd = shoulder.clone().add(v(0, Math.cos(rise) * q.neck, Math.sin(rise) * q.neck));
+  if (q.neck > 0.03) out.push(named(limb(shoulder, neckEnd, Math.max(q.leg * 1.1, g * 0.2), plan.skin, false), "neck"));
+  const hr = q.head / 2;
+  const head = neckEnd.clone().add(v(0, hr * 0.7, hr * 0.2));
+  out.push(named(ball(head, hr, plan.head, v(0.75, 1, 0.75), 10), "head"));
+  out.push(named(ball(head.clone().add(v(0, hr * 0.75, -hr * 0.25)), hr * 0.45, plan.accent, v(0.9, 1.1, 0.8), 8), "muzzle"));
+  out.push(named(ball(head.clone().add(v(0, hr * 1.18, -hr * 0.2)), hr * 0.12, plan.beak, undefined, 6), "nose"));
+  for (const side of [-1, 1]) {
+    out.push(named(ball(head.clone().add(v(side * hr * 0.55, hr * 0.35, hr * 0.25)), hr * 0.12, plan.eyes, undefined, 6), "eye"));
+    const at = (x: number, y: number, z: number) => head.clone().add(v(side * x * hr, y * hr, z * hr));
+    switch (q.ears) {
+      case "pointed":
+        out.push(named(cone(at(0.45, -0.2, 0.55), v(side * 0.3, -0.1, 1).normalize(), hr * 0.22, hr * 0.6, plan.head, 4), "ear"));
+        break;
+      case "round":
+        out.push(named(ball(at(0.6, -0.2, 0.6), hr * 0.25, plan.head, v(1, 0.5, 1), 6), "ear"));
+        break;
+      case "long":
+        out.push(named(cone(at(0.3, -0.3, 0.6), v(side * 0.15, -0.3, 1).normalize(), hr * 0.2, hr * 1.8, plan.head, 5), "ear"));
+        break;
+      case "floppy":
+        out.push(named(ball(at(0.75, -0.1, 0), hr * 0.3, plan.head, v(0.35, 0.8, 1.3), 6), "ear"));
+        break;
+      case "fan":
+        out.push(named(ball(at(0.85, -0.4, 0), hr * 1.1, plan.head, v(0.12, 0.8, 1), 8), "ear"));
+        break;
+      case "none":
+        break;
+    }
+  }
+  const parts = q.parts ?? [];
+  if (parts.includes("trunk")) {
+    // From the face down toward the floor, curling a little forward at the tip.
+    const a = head.clone().add(v(0, hr * 0.85, -hr * 0.3));
+    const b = a.clone().add(v(0, hr * 0.25, -a.z * 0.5));
+    const c = v(0, b.y + hr * 0.2, Math.max(q.leg, a.z * 0.12));
+    out.push(named(limb(a, b, hr * 0.24, plan.head, false), "trunk"), named(limb(b, c, hr * 0.16, plan.head, false), "trunk"));
+  }
+  for (const side of [-1, 1]) {
+    const at = (x: number, y: number, z: number) => head.clone().add(v(side * x * hr, y * hr, z * hr));
+    if (parts.includes("tusks")) out.push(named(cone(at(0.35, 0.6, -0.45), v(side * 0.15, 0.8, -0.35).normalize(), hr * 0.1, hr * 1.1, IVORY, 6), "tusk"));
+    if (parts.includes("horns")) out.push(named(cone(at(0.35, -0.1, 0.65), v(side * 0.6, 0.2, 0.8).normalize(), hr * 0.12, hr * 0.7, HORN_TONE, 6), "horn"));
+    if (parts.includes("antlers")) {
+      const base = at(0.3, -0.1, 0.65);
+      const tip = base.clone().add(v(side * hr * 0.8, -hr * 0.4, hr * 1.8));
+      const mid = base.clone().lerp(tip, 0.5);
+      out.push(named(limb(base, tip, hr * 0.06, HORN_TONE, false), "antler"), named(limb(mid, mid.clone().add(v(0, hr * 0.5, hr * 0.6)), hr * 0.05, HORN_TONE, false), "antler"));
+    }
+    if (parts.includes("wings")) out.push(named(wing(side, 0.75, v(side * halfW * 0.6, half * 0.2, midZ + g * 0.45), plan.wing), "wing"));
+  }
+  if (parts.includes("shell")) {
+    const dome = new THREE.SphereGeometry(1, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+    dome.rotateX(Math.PI / 2);
+    out.push(named(placed(dome, plan.accent, v(0, 0, midZ - g * 0.15), undefined, v(halfW * 1.15, half * 1.05, g * 0.75)), "shell"));
+  }
+  if (q.tail > 0) {
+    const root = v(0, -half * 0.95, midZ + g * 0.15);
+    const tip = root.clone().add(v(0, -q.tail * 0.85, -q.tail * 0.45));
+    tip.z = Math.max(q.sprawl ? g * 0.12 : g * 0.08, tip.z);
+    const r = q.sprawl ? g * 0.25 : plan.covering === "fur" ? g * 0.1 : g * 0.05;
+    out.push(named(limb(root, tip, r, plan.skin, false), "tail"));
+  }
+  return out;
+}
+
+
+/**
+ * A fish or whale one unit long, facing +y: a body with a pale belly, a head, eyes, a dorsal fin and side fins, and a
+ * tail: a fish's upright tail fin, or a whale's level flukes and a blowhole on top.
+ */
+function fishParts(plan: AnimalPlan, s: { girth: number; fluke?: true }): Part[] {
+  const g = s.girth;
+  const w = g * (s.fluke ? 0.45 : 0.3);
+  const out: Part[] = [
+    named(ball(v(0, 0, g / 2), 1, plan.skin, v(w, 0.5, g / 2), 12), "body"),
+    named(ball(v(0, 0.04, g * 0.32), 1, plan.accent, v(w * 0.85, 0.42, g * 0.3), 10), "belly"),
+    named(ball(v(0, 0.33, g * 0.52), 1, plan.head, v(w * 0.9, 0.2, g * 0.42), 10), "head"),
+    named(cone(v(0, -0.05, g * 0.9), v(0, -0.5, 1).normalize(), g * 0.18, g * 0.45, plan.skin, 4), "fin"),
+    named(limb(v(0, -0.4, g * 0.5), v(0, -0.55, g * 0.5), g * 0.12, plan.skin, false), "tail"),
+  ];
+  for (const side of [-1, 1]) {
+    out.push(named(ball(v(side * w * 0.8, 0.4, g * 0.6), g * 0.06, plan.eyes, undefined, 6), "eye"));
+    out.push(named(ball(v(side * w, 0.15, g * 0.25), g * 0.25, plan.skin, v(1.2, 1, 0.15), 6), "fin"));
+    if (s.fluke) out.push(named(ball(v(side * g * 0.4, -0.58, g * 0.5), g * 0.35, plan.skin, v(1.2, 0.6, 0.15), 8), "tail"));
+  }
+  if (s.fluke) out.push(named(ball(v(0, 0.22, g * 0.98), g * 0.05, INK_DARK, undefined, 6), "blowhole"));
+  else out.push(named(ball(v(0, -0.6, g * 0.5), g * 0.5, plan.skin, v(0.12, 0.5, 1.1), 8), "tail"));
+  return out;
+}
+
+/**
+ * An insect, spider or crab one unit long, facing +y: head, thorax and banded abdomen (or a spider's or crab's two
+ * body parts), jointed legs reaching out and down to the floor, and the shape's claws, wings and feelers.
+ */
+function arthropodParts(plan: AnimalPlan, b: NonNullable<AnimalPlan["bug"]>): Part[] {
+  const h = ARTHROPOD_BODY_Z;
+  const out: Part[] = [];
+  const headY = b.segments === 3 ? 0.36 : 0.32;
+  if (b.segments === 3) {
+    out.push(named(ball(v(0, 0.12, h), 0.11, plan.skin, v(0.9, 1.1, 0.85), 8), "thorax"));
+    out.push(named(ball(v(0, -0.22, h), 0.17, plan.skin, v(0.9, 1.4, 0.85), 10), "abdomen"));
+    for (const y of [-0.15, -0.3]) {
+      const band = new THREE.TorusGeometry(0.15, 0.025, 4, 12);
+      band.rotateX(Math.PI / 2);
+      band.scale(1, 1, 0.85);
+      out.push(named(placed(band, plan.accent, v(0, y, h)), "band"));
+    }
+  } else {
+    out.push(named(ball(v(0, 0.12, h), 0.17, plan.skin, v(1.1, 1, 0.7), 10), "body"));
+    out.push(named(ball(v(0, -0.2, h), 0.22, plan.accent, v(1, 1.1, 0.85), 10), "abdomen"));
+  }
+  out.push(named(ball(v(0, headY, h), 0.08, plan.head, undefined, 8), "head"));
+  for (const side of [-1, 1]) {
+    out.push(named(ball(v(side * 0.05, headY + 0.05, h + 0.04), 0.03, plan.eyes, undefined, 6), "eye"));
+    for (let i = 0; i < b.legs / 2; i++) {
+      const y = 0.2 - (i * 0.3) / (b.legs / 2);
+      const splay = (i - (b.legs / 2 - 1) / 2) * 0.12;
+      const hip = v(side * 0.08, y, h);
+      const knee = v(side * 0.32, y - splay * 0.5, h + 0.12);
+      const foot = v(side * 0.48, y - splay, 0.012);
+      out.push(named(limb(hip, knee, 0.016, plan.feet, false), "leg"), named(limb(knee, foot, 0.013, plan.feet, false), "leg"));
+    }
+    if (b.claws) {
+      const a = v(side * 0.12, 0.28, h);
+      const elbow = v(side * 0.3, 0.42, h);
+      out.push(named(limb(a, elbow, 0.03, plan.skin, false), "claw"), named(ball(v(side * 0.3, 0.56, h), 0.08, plan.skin, v(0.7, 1.4, 0.6), 8), "claw"));
+    }
+    if (b.wings) out.push(named(ball(v(side * 0.17, -0.05, h + 0.14), 0.25, "#e6eef2", v(0.6, 1.2, 0.05), 8), "wing"));
+    if (b.antennae) out.push(named(limb(v(side * 0.03, headY + 0.06, h + 0.04), v(side * 0.15, headY + 0.36, h + 0.22), 0.008, INK_DARK, false), "antenna"));
+  }
+  return out;
+}
+
+/**
+ * A jellyfish (a bell with its tentacles hanging to the floor) or an octopus (a mantle behind a head with eyes, its
+ * arms spread over the floor round it), facing +y.
+ */
+function tentacledParts(plan: AnimalPlan, a: { count: number; mantle?: true }): Part[] {
+  const out: Part[] = [];
+  if (!a.mantle) {
+    const bell = new THREE.SphereGeometry(0.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    bell.rotateX(Math.PI / 2);
+    out.push(named(placed(bell, plan.skin, v(0, 0, 0.6), undefined, v(1, 1, 0.8)), "bell"));
+    out.push(named(ball(v(0, 0, 0.62), 0.3, plan.accent, v(1, 1, 0.45), 8), "bell"));
+    for (let i = 0; i < a.count; i++) {
+      const t = (i / a.count) * Math.PI * 2;
+      out.push(named(limb(v(0.35 * Math.cos(t), 0.35 * Math.sin(t), 0.6), v(0.25 * Math.cos(t), 0.25 * Math.sin(t), 0.04), 0.018, plan.accent, false), "tentacle"));
+    }
+    return out;
+  }
+  out.push(named(ball(v(0, -0.15, 0.45), 0.3, plan.skin, v(0.9, 1.1, 1.2), 10), "mantle"));
+  out.push(named(ball(v(0, 0.1, 0.25), 0.2, plan.head, undefined, 10), "head"));
+  for (const side of [-1, 1]) out.push(named(ball(v(side * 0.14, 0.22, 0.32), 0.05, plan.eyes, undefined, 6), "eye"));
+  for (let i = 0; i < a.count; i++) {
+    const t = (i / a.count) * Math.PI * 2;
+    const root = v(0.12 * Math.cos(t), 0.1 + 0.12 * Math.sin(t), 0.12);
+    const mid = v(0.45 * Math.cos(t), 0.1 + 0.45 * Math.sin(t), 0.035);
+    const tip = v(0.7 * Math.cos(t + 0.3), 0.1 + 0.7 * Math.sin(t + 0.3), 0.02);
+    out.push(named(limb(root, mid, 0.04, plan.skin, false), "arm"), named(limb(mid, tip, 0.022, plan.skin, false), "arm"));
+  }
+  return out;
+}
+
+/**
+ * A slug or snail one unit long gliding on its foot, facing +y, with its head and eye stalks and a snail's coiled shell
+ * on its back; or a clam: two valves shut, the upper in the accent.
+ */
+function molluscParts(plan: AnimalPlan, shell: "coil" | "valves" | "none"): Part[] {
+  if (shell === "valves") {
+    const upper = new THREE.SphereGeometry(1, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+    upper.rotateX(Math.PI / 2);
+    const lower = upper.clone();
+    lower.rotateX(Math.PI);
+    return [
+      named(placed(upper, plan.accent, v(0, 0, 0.2), undefined, v(0.5, 0.45, 0.18)), "shell"),
+      named(placed(lower, plan.skin, v(0, 0, 0.2), undefined, v(0.5, 0.45, 0.18)), "shell"),
+    ];
+  }
+  const out: Part[] = [
+    named(limb(v(0, -0.42, 0.08), v(0, 0.38, 0.08), 0.08, plan.skin, false), "body"),
+    named(ball(v(0, -0.02, 0.025), 1, plan.accent, v(0.12, 0.5, 0.025), 8), "foot"),
+    named(ball(v(0, 0.44, 0.1), 0.08, plan.head, undefined, 8), "head"),
+  ];
+  for (const side of [-1, 1]) {
+    const top = v(side * 0.07, 0.52, 0.3);
+    out.push(named(limb(v(side * 0.03, 0.47, 0.14), top, 0.012, plan.head, false), "stalk"));
+    out.push(named(ball(top, 0.022, INK_DARK, undefined, 6), "eye"));
+  }
+  if (shell === "coil") {
+    const coil = new THREE.TorusGeometry(0.18, 0.09, 6, 14);
+    coil.rotateY(Math.PI / 2);
+    out.push(named(placed(coil, plan.accent, v(0, -0.08, 0.27)), "shell"), named(ball(v(0, -0.08, 0.27), 0.12, plan.accent, v(0.8, 1, 1), 8), "shell"));
+  }
+  return out;
 }
 
 /** A mallard drake about a metre long: grey-brown body, chestnut breast, green head over a white ring, yellow bill. */
